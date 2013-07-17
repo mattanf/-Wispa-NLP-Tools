@@ -60,12 +60,13 @@ public class DataRunner {
 
 		// This class does in a round about way initializes the log. we need to call it before making changes to the
 		// loging mechnism
-		LocationParserUtil.instance();
+		//LocationParserUtil.instance();
 		// Remove the previous logging mechanism and add a better handler
-		//Logger.getGlobal().getParent().removeHandler(Logger.getGlobal().getParent().getHandlers()[0]);
+		Logger.getGlobal().setUseParentHandlers(false);
+		//getParent().removeHandler(Logger.getGlobal().getParent().getHandlers()[0]);
 		ConsoleHandler handler = new ConsoleHandler();
 		handler.setFormatter(new LogLineFormatter());
-		Logger.getGlobal().getParent().addHandler(handler);
+		Logger.getGlobal().addHandler(handler);
 
 		if (args.length == 0) {
 			System.out.println("Usage: [XLS/X source file] {XLS/X output file}");
@@ -130,11 +131,11 @@ public class DataRunner {
 				isSuccess = !isEndRow(wb,readRowNum);
 			}
 			if (!isSuccess)
-				System.err.println("Error: Parser could not be find header message.");
+				System.err.println("Error: ParserTree could not be find header message.");
 			else {
 				isSuccess = parser.init();
 				if (!isSuccess)
-					System.err.println("Error: Parser could not be initialized. Data source could not be found.");
+					System.err.println("Error: ParserTree could not be initialized. Data source could not be found.");
 				else {
 					int metaDataHeadersOffset = 0;
 					ArrayList<String> metaDataHeaders = new ArrayList<String>();
@@ -338,7 +339,7 @@ public class DataRunner {
 
 	private static boolean isEndRow(XSSFWorkbook wb, int rowNum) {
 		XSSFSheet sheet = wb.getSheetAt(0);
-		return (sheet == null) || (rowNum >= sheet.getLastRowNum());
+		return (sheet == null) || (rowNum > sheet.getLastRowNum());
 	}
 
 	private static int getRowWidth(XSSFWorkbook wb, int rowNum) {

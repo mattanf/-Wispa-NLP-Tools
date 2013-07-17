@@ -6,25 +6,18 @@ import java.io.FileOutputStream;
 import org.apache.poi.openxml4j.opc.OPCPackage;
 //aimport junit.framework.Assert;
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
+
 //import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.util.CellReference;
-import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Iterator;
-import java.util.Locale;
-import java.util.Stack;
 import java.util.logging.ConsoleHandler;
-import java.util.logging.SimpleFormatter;
+
 import java.util.logging.Logger;
 
 import com.pairapp.engine.parser.LocationParserUtil;
@@ -36,10 +29,9 @@ import com.pairapp.engine.parser.data.PostFieldData;
 import com.pairapp.engine.parser.data.PostFieldType;
 import com.pairapp.engine.parser.data.VariantDate;
 import com.pairapp.engine.parser.data.VariantEnum;
-import com.pairapp.engine.parser.data.VariantType;
 import com.pairapp.engine.parser.data.VariantTypeEnums;
 import com.pairapp.utilities.LogLineFormatter;
-import com.pairapp.engine.parser.data.PostData;
+
 
 public class DataRunner {
 

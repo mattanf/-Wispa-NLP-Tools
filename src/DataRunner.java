@@ -4,10 +4,8 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 
 import org.apache.poi.openxml4j.opc.OPCPackage;
-//aimport junit.framework.Assert;
 import org.apache.poi.ss.usermodel.Cell;
 
-//import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
@@ -15,6 +13,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.logging.ConsoleHandler;
 
@@ -39,6 +38,7 @@ public class DataRunner {
 	private final static String SUBJECT_RESULT = "Result";
 	private final static String SUBJECT_FAILED_FIELDS = "Failed Fields";
 	private final static int COMPARISON_FIELD_COUNT = 2;
+	private final static int MAX_HEADERS = 100;
 	private final static String SUBJECT_OPEN_ENDED_OUTPUTS = "...";
 	
 	private final static String KEY_LOG_LOCATIONS = "Log locations";
@@ -155,7 +155,6 @@ public class DataRunner {
 						case 1:
 							if (columnName.isEmpty() == false)
 							{
-								comparisonHeaders.add(columnName);
 								hasComparison = true;
 							}
 							else sectionInt = 2;
@@ -179,14 +178,19 @@ public class DataRunner {
 					metaDataHeadersOffset = 1;
 					comparisonHeadersOffset = metaDataHeaders.size() + 1 + metaDataHeadersOffset;
 					outputHeadersOffset = comparisonHeaders.size() + 1 + comparisonHeadersOffset;
+					int countParsedMessages = 0;
 					
 					if (outputHeaders.size() == 0)
 						outputHeaders = (ArrayList<String>)(comparisonHeaders.clone());
+					
 					if (hasComparison)
 					{
 						outputHeaders.add(0, SUBJECT_RESULT);
 						outputHeaders.add(1, SUBJECT_FAILED_FIELDS);
 					}
+					
+					int countMessageDiffer[] = new int[MAX_HEADERS];
+					Arrays.fill(countMessageDiffer,0);
 					
 					
 					// Compare and write the report
@@ -200,23 +204,27 @@ public class DataRunner {
 							message.addMessageSection(MessageSectionType.Request, messageStr);
 
 							PostData outData = parser.parseMessage(message, inputData);
-
+							++countParsedMessages;
 							if (!isOutputHeaderFixed)
 								gatherColumnsFromOutputData(outputHeaders, inputData, outData, wb, headerRowNum, outputHeadersOffset);
-
+							
 							String resultDesc = "";
 							String failedFieldsDesc = "";
-							if (outData != null) {
+							if ((outData != null) && (hasComparison == true)){
 								resultDesc = "Same";
 
-								for (int i = 0; i < comparisonHeaders.size(); ++i) {
+								for (int i = COMPARISON_FIELD_COUNT; i < comparisonHeaders.size(); ++i) {
 									String outputKeyName = comparisonHeaders.get(i);
 									
 									int col = getColumnNum(comparisonHeadersOffset, comparisonHeaders, outputKeyName);
 									if (getCellString(wb, readRowNum, col).compareToIgnoreCase(
 											getFieldSafe(outData, outputKeyName)) != 0) {
 										resultDesc = "Different";
-										failedFieldsDesc = failedFieldsDesc + outputKeyName + ";";
+										if (failedFieldsDesc.isEmpty() == false)
+											failedFieldsDesc += "+";
+										else ++countMessageDiffer[0];
+										failedFieldsDesc = failedFieldsDesc + outputKeyName;
+										++countMessageDiffer[i];
 									}
 								}
 							}
@@ -237,6 +245,12 @@ public class DataRunner {
 							++readRowNum;
 
 						}
+						
+						//Write the comparison results
+						if (hasComparison)
+						{
+							writeComparisonResults(wb, countParsedMessages,comparisonHeaders, countMessageDiffer);
+						}
 					}
 					
 					saveWorkbook(wb, target);
@@ -249,6 +263,12 @@ public class DataRunner {
 		}
 
 		return isSuccess;
+	}
+
+	private static void writeComparisonResults(XSSFWorkbook wb, int countParsedMessages, ArrayList<String> comparisonHeaders,
+			int[] countMessageDiffer) {
+		// TODO Auto-generated method stub
+		
 	}
 
 	/**

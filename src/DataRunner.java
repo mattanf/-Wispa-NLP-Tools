@@ -242,15 +242,15 @@ public class DataRunner {
 								writeToCell(wb, readRowNum, outputHeadersOffset, outputHeaders, fieldName, value);
 							}
 
-							++readRowNum;
-
-						}
 						
-						//Write the comparison results
-						if (hasComparison)
-						{
-							writeComparisonResults(wb, countParsedMessages,comparisonHeaders, countMessageDiffer);
 						}
+						++readRowNum;
+
+						//Write the comparison results
+						//if (hasComparison)
+						//{
+						//	writeComparisonResults(wb, countParsedMessages,comparisonHeaders, countMessageDiffer);
+						//}
 					}
 					
 					saveWorkbook(wb, target);

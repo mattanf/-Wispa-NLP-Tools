@@ -112,17 +112,17 @@ public class LocationEntry implements Comparable<LocationEntry>, Serializable {
 		return num * mul;
 	}
 
-	public LocationEntry getCityLocation() {
-		return new LocationEntry(cityId, cityName, cityId, cityName, null, null);
-	}
-
 	public LocationEntry generateCityLocation() {
-		// TODO Auto-generated method stub
-		return null;
+		return new LocationEntry(cityId, cityName, cityId, cityName, null, null);
 	}
 
 	public boolean isCity() {
 		return cityName.equals(areaName) || areaName == null || areaName.isEmpty();
+	}
+
+	public boolean isSameCity(LocationEntry loc) {
+		return cityName.equals(loc.cityName);
+
 	}
 
 }

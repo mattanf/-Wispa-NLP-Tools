@@ -276,10 +276,10 @@ public class DataRunner {
 								writeToCell(wb, readRowNum, outputHeadersOffset, outputHeaders, fieldName, value);
 							}
 						}
-						
-					}
 						++readRowNum;
-
+	
+					}
+					
 					// Write the comparison results
 						//if (hasComparison)
 						//{

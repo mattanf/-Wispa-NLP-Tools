@@ -28,11 +28,11 @@ public class GeocodeQueryDescriptor implements Serializable {
 		FLU = 0;						
 	}
 	
-	public GeocodeQueryDescriptor(String locationName, GeocoderResult res) {
+	public GeocodeQueryDescriptor(String locationName, GeocoderResult res, int size) {
 		this(locationName,
 				res != null ? res.getFormattedAddress() : null,
 				res != null ? res.isPartialMatch() : true,
-				res != null, 0);
+				res != null, size);
 	}
 
 	public String getQueriedLocationName() {
@@ -47,10 +47,7 @@ public class GeocodeQueryDescriptor implements Serializable {
 	public boolean isRecordExists() {
 		return recordExists;
 	}
-	public int getRecordSizeInFile() {
+	public int getNumExtraRecords() {
 		return recordSizeInFile;
-	}
-	public void setRecordSizeInFile(int recordSizeInFile) {
-		this.recordSizeInFile = recordSizeInFile;
 	}
 }

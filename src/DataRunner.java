@@ -23,8 +23,6 @@ import com.google.appengine.tools.development.testing.LocalDatastoreServiceTestC
 import com.google.appengine.tools.development.testing.LocalServiceTestHelper;
 import com.pairapp.engine.parser.LocationParserUtil;
 import com.pairapp.engine.parser.MessageParser;
-import com.pairapp.engine.parser.ParseInputData;
-import com.pairapp.engine.parser.ParseInputData.MessageSectionType;
 import com.pairapp.engine.parser.data.PostData;
 import com.pairapp.engine.parser.data.PostFieldData;
 import com.pairapp.engine.parser.data.PostFieldType;
@@ -232,10 +230,9 @@ public class DataRunner {
 							PostData inputData = generateInitialePostData(wb, readRowNum, metaDataHeaders,
 									metaDataHeadersOffset);
 
-							ParseInputData message = new ParseInputData();
-							message.addMessageSection(MessageSectionType.Request, messageStr);
-
-							PostData outData = parser.parseMessage(message, inputData);
+							inputData.setOriginalMessageText(messageStr);
+							PostData outData = parser.parseMessage(inputData);
+							
 							++countParsedMessages;
 							if (!isOutputHeaderFixed)
 								gatherColumnsFromOutputData(outputHeaders, inputData, outData, wb, headerRowNum,

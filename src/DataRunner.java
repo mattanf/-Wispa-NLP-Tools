@@ -70,12 +70,12 @@ public class DataRunner {
 		int fileIndex = 0;
 		for (int i = 0; i < args.length; ++i) {
 			if (args[fileIndex].startsWith("-")) {
-				if (args[fileIndex].startsWith("-r"))
+				if (args[fileIndex].matches("-r\\d+"))
 					endParseRow = startParseRow = Integer.valueOf(args[fileIndex].substring(2)) - 1;
-				if (args[fileIndex].startsWith("-sr"))
-					startParseRow = Integer.valueOf(args[fileIndex].substring(2)) - 1;
-				if (args[fileIndex].startsWith("-er"))
-					endParseRow = Integer.valueOf(args[fileIndex].substring(2)) - 1;
+				if (args[fileIndex].matches("-rs\\d+"))
+					startParseRow = Integer.valueOf(args[fileIndex].substring(3)) - 1;
+				if (args[fileIndex].matches("-re\\d+"))
+					endParseRow = Integer.valueOf(args[fileIndex].substring(3)) - 1;
 				++fileIndex;
 			} else
 				break;

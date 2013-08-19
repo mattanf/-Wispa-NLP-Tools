@@ -16,12 +16,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.logging.ConsoleHandler;
+import java.util.logging.Level;
 
 import java.util.logging.Logger;
 
 import com.google.appengine.tools.development.testing.LocalDatastoreServiceTestConfig;
 import com.google.appengine.tools.development.testing.LocalServiceTestHelper;
-import com.pairapp.engine.parser.LocationParserUtil;
 import com.pairapp.engine.parser.MessageParser;
 import com.pairapp.engine.parser.data.PostData;
 import com.pairapp.engine.parser.data.PostFieldData;
@@ -30,7 +30,6 @@ import com.pairapp.engine.parser.data.VariantDate;
 import com.pairapp.engine.parser.data.VariantEnum;
 import com.pairapp.engine.parser.data.VariantTypeEnums;
 import com.pairapp.utilities.LogLineFormatter;
-import com.sun.swing.internal.plaf.metal.resources.metal_zh_CN;
 
 public class DataRunner {
 
@@ -59,13 +58,14 @@ public class DataRunner {
 
 		// This class does in a round about way initializes the log. we need to call it before making changes to the
 		// loging mechnism
-		// LocationParserUtil.instance();
+		// GeocodeQuerier.instance();
 		// Remove the previous logging mechanism and add a better handler
 		Logger.getGlobal().setUseParentHandlers(false);
 		// getParent().removeHandler(Logger.getGlobal().getParent().getHandlers()[0]);
 		ConsoleHandler handler = new ConsoleHandler();
 		handler.setFormatter(new LogLineFormatter());
 		Logger.getGlobal().addHandler(handler);
+		Logger.getGlobal().setLevel(Level.SEVERE);
 
 		int fileIndex = 0;
 		for (int i = 0; i < args.length; ++i) {
@@ -102,10 +102,12 @@ public class DataRunner {
 				File targetFile = new File(secondaryFileName);
 				if (args.length > fileIndex + 1)
 					targetFile = new File(args[fileIndex + 1]);
+				
+				System.out.println("Started parse process");
 				datastoreHelper.setUp();
 				analyzeFile(sourceFile, targetFile);
 				datastoreHelper.tearDown();
-
+				System.out.println("Ended parse process");
 			}
 		}
 	}
@@ -127,8 +129,6 @@ public class DataRunner {
 			MessageParser parser = new MessageParser();
 			int readRowNum = 0;
 
-			LocationParserUtil.instance().setSearchesLogged(false);
-			LocationParserUtil.instance().setSearchPerformed(false);
 			/*
 			 * Read the pre fields header
 			 */
@@ -137,12 +137,7 @@ public class DataRunner {
 				String h1 = getCellString(wb, readRowNum, 0).trim();
 				String h2 = getCellString(wb, readRowNum, 1);
 
-				if (h1.equalsIgnoreCase(KEY_LOG_LOCATIONS)) {
-					LocationParserUtil.instance().setSearchesLogged(Boolean.parseBoolean(h2));
-				} else if (h1.equalsIgnoreCase(KEY_PROCESS_LOCATIONS)) {
-					LocationParserUtil.instance().setSearchPerformed(Boolean.parseBoolean(h2));
-				} else if ((!h1.isEmpty()) && (!h2.isEmpty()) && (!h1.contains(" "))) {
-
+				if ((!h1.isEmpty()) && (!h2.isEmpty()) && (!h1.contains(" "))) {
 					basePostData.addField(h1, null, h2);
 				}
 				++readRowNum;
@@ -151,7 +146,7 @@ public class DataRunner {
 			if (!isSuccess)
 				System.err.println("Error: ParserTree could not be find header message.");
 			else {
-				isSuccess = parser.init();
+				isSuccess = parser.init(false);
 				if (!isSuccess)
 					System.err.println("Error: ParserTree could not be initialized. Data source could not be found.");
 				else {

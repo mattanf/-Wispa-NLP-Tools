@@ -7,15 +7,16 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Iterator;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import com.google.code.geocoder.model.GeocoderResult;
+import com.google.code.geocoder.model.LatLng;
+import com.pairapp.engine.parser.location.LocationLanguageData;
+import com.pairapp.engine.parser.location.LocationLanguageData.MisspellCorrectionType;
 import com.pairapp.engine.parser.location.NamedLocation.LocationType;
-import com.pairapp.utilities.SimpleCache;
 
 import utility.XLSUtil;
 
@@ -23,8 +24,7 @@ public class GeocodeRunner {
 
 	private static final String GEOCODE_OUTPUT_DIR = "GeocodeData";
 	private static final String DEFAULT_COUNTRY_NAME = "ישראל";
-	private static GeocodeDataManager countryData = null;
-	private static SimpleCache<String, GeocodeDataManager> cityDataManagers = null;
+	private static final int MIN_STREET_COUNT_FOR_INCLUDE = 20;
 	private static ArrayList<LocationEntry> cityByDistance = null;
 	private static XSSFWorkbook streetWB;
 	private static String workingDir;
@@ -39,17 +39,14 @@ public class GeocodeRunner {
 	 */
 	public static void main(String[] args) throws ClassNotFoundException, IOException {
 
+		String fileToMergeFrom = null;
 		boolean gatherDataFromGoogle = false;
 		if ((args.length > 0) && (args[0].equals("-scan")))
 			gatherDataFromGoogle = true;
+		if ((args.length > 1) && (args[0].equals("-merge")))
+			fileToMergeFrom = args[1];
 
-		cityDataManagers = new SimpleCache<String, GeocodeDataManager>(4, false,
-				new SimpleCache.Destructor<GeocodeDataManager>() {
-					public void destroy(GeocodeDataManager man) {
-						man.close();
-					}
-				});
-
+		
 		workingDir = new File(".").getCanonicalPath();
 		if (new File(workingDir, "rehovot.xlsx").exists())
 			streetWB = XLSUtil.openXLS("rehovot.xlsx");
@@ -59,6 +56,7 @@ public class GeocodeRunner {
 				streetWB = XLSUtil.openXLS("C:\\Public\\Train Data\\rehovot.xlsx");
 		}
 
+		
 		if (streetWB == null) {
 			System.out.println("Error: Unable to find rehovot.xlsx source file.");
 		} else {
@@ -66,84 +64,225 @@ public class GeocodeRunner {
 			if (outDir.exists() == false)
 				outDir.mkdir();
 			workingDir = outDir.getCanonicalPath();
-
-			countryData = new GeocodeDataManager(workingDir, DEFAULT_COUNTRY_NAME);
-
+			GeocodeDataManagerCollection.initialize(workingDir);
+			
+			HashMap<String, String> cityToCode = new HashMap<>();
+			scanCityInfo(cityToCode);
 			if (gatherDataFromGoogle) {
-				scanCityInfo();
 				scanStreetInfo();
 			}
-			outputGatheredData();
+			mergeFromAdditionalFile(fileToMergeFrom);
+			outputGatheredData(cityToCode,fileToMergeFrom);
+			
 		}
-		if (countryData != null)
-			countryData.close();
-		if (cityDataManagers != null)
-			cityDataManagers.clear();
+		
+		GeocodeDataManagerCollection.deinitialize(workingDir);
+		System.out.println("Work done.");
 	}
 
-	private static void outputGatheredData() {
-		GeocodeDataToXml serializer = new GeocodeDataToXml();
+	private static void mergeFromAdditionalFile(String fileToMergeFrom) {
+		XSSFWorkbook mergeWB = XLSUtil.openXLS(fileToMergeFrom);
+		int sheetNum = XLSUtil.getSheetNumber(mergeWB, "Locations");
+		if (("Latitude".equals(XLSUtil.getCellString(mergeWB, sheetNum, 0, 2))) &&
+				("Longitude".equals(XLSUtil.getCellString(mergeWB, sheetNum, 0, 3))))
+		{
+			boolean hasChanges = false;
+			int readRow = 1;
+			while (!XLSUtil.isEndRow(mergeWB, sheetNum, readRow))
+			{
+				String locationName = XLSUtil.getCellString(mergeWB, sheetNum, readRow, 0);
+				if (!("Pass".equals(XLSUtil.getCellString(mergeWB, sheetNum, readRow, 4))))
+				{
+					GeocoderResult res = GeocodeDataManagerCollection.getAddressGeodata(locationName, true, false);
+					hasChanges = true;
+					if (res == null)
+					{
+						XLSUtil.setCellString(mergeWB, sheetNum, readRow, 4, "Fail");
+					}
+					else
+					{
+						XLSUtil.setCellString(mergeWB, sheetNum, readRow, 2, res.getGeometry().getLocation().getLat().toString());
+						XLSUtil.setCellString(mergeWB, sheetNum, readRow, 3, res.getGeometry().getLocation().getLng().toString());
+						XLSUtil.setCellString(mergeWB, sheetNum, readRow, 4, "Pass");
+					}
+				}
+								
+				++readRow;
+			}
+			
+			if (hasChanges)
+				XLSUtil.saveXLS(mergeWB,fileToMergeFrom);
+		}	
+		else System.out.println("Error - no proper merge file found");
+	}
 
+	private static void outputGatheredData(HashMap<String, String> cityToCode, String languageExcel) {
+		LocationLanguageData langData = readLanuguageDataFromFile(languageExcel);
+		GeocodeDataToXml serializer = new GeocodeDataToXml(langData);
+		
 		ArrayList<GeocoderResult> citiesToWrite = new ArrayList<GeocoderResult>();
-		Iterator<GeocoderResult> cityIt = countryData.getUniqueGeoResults();
+		Iterator<GeocoderResult> cityIt = GeocodeDataManagerCollection.getCountryData().getUniqueGeoResults();
 		while (cityIt.hasNext()) {
 			GeocoderResult cityRes = cityIt.next();
-			GeocodeDataManager man = getGeocodeManager(cityRes.getFormattedAddress());
-			if ((man != null) && (man.getUniqueResultCount() > 30)) {
-				serializer.writeXMLtoFile(man.getBaseLocationName(), man.getUniqueGeoResults(), workingDir,
-						LocationType.City);
+			GeocodeDataManager man = GeocodeDataManagerCollection.getGeocodeManager(cityRes.getFormattedAddress());
+			if ((man != null) && (man.getUniqueResultCount() > MIN_STREET_COUNT_FOR_INCLUDE)) {
+				
+				String parentName = man.getBaseLocationName();
+				String locationCode = cityToCode.get(parentName);
+				if (locationCode == null)
+				{
+					locationCode = generateCodeIfNeeded(parentName);
+					cityToCode.put(parentName, locationCode);
+				}
+				if (locationCode == null)
+				{
+					locationCode = parentName;
+				}
+				locationCode = GeocodeDataManagerCollection.DEFAULT_COUNTRY_CODE + "-" + locationCode;
+				
+				serializer.writeXMLtoFile(parentName, locationCode, man.getUniqueGeoResults(), workingDir,
+						LocationType.City, null);
 				citiesToWrite.add(cityRes);
+				
 			}
+		}		
+		
+		serializer.writeXMLtoFile(GeocodeDataManagerCollection.getCountryData().getBaseLocationName(), GeocodeDataManagerCollection.DEFAULT_COUNTRY_CODE,
+				citiesToWrite.iterator(), workingDir,
+				LocationType.Country, cityToCode);
+	}
+	
+	private static String generateCodeIfNeeded(String cityName) {
+		boolean isAscii = cityName.matches("\\p{ASCII}*");
+		if (!isAscii)
+		{
+			GeocoderResult res = GeocodeDataManagerCollection.getAddressGeodata(cityName, false, false);
+			int lat = ((int)(res.getGeometry().getLocation().getLat().doubleValue() * 100) + 36000) % 36000;
+			int lng = ((int)(res.getGeometry().getLocation().getLng().doubleValue() * 100) + 36000) % 36000;
+			return String.format("%1$05d%2$05d", lat, lng);
 		}
-
-		serializer.writeXMLtoFile(countryData.getBaseLocationName(), citiesToWrite.iterator(), workingDir,
-				LocationType.Country);
+		return null;		
 	}
 
-	private static void scanCityInfo() {
+	private static LocationLanguageData readLanuguageDataFromFile(String languageExcel) {
+		//מיותר	תחילית	שם אב	ניתן לנירמול	שם 1	שם 2	שם 3	שם 4
+		final int LANG_COL_TYPE = 0;
+		final int LANG_COL_REDUNDENT = 1;
+		final int LANG_COL_PARENT = 2;
+		final int LANG_COL_ALT_NAME_BEGIN = 3;
+		
+		final int LANG_COL_EXCLUDED = 0;
+		final int LANG_COL_ISREGEX = 1;
+		
+		XSSFWorkbook langWB = XLSUtil.openXLS(languageExcel);
+		int misspellsSheet = XLSUtil.getSheetNumber(langWB, "Misspells");
+		int excludedSheet = XLSUtil.getSheetNumber(langWB, "Excluded Names");
+		if ((misspellsSheet != -1) || (excludedSheet != -1))
+		{
+			LocationLanguageData retLangData = new LocationLanguageData("he");
+			int readRow = 1;
+			while (!XLSUtil.isEndRow(langWB, misspellsSheet, readRow))
+			{
+				boolean isRedundent = Boolean.valueOf(XLSUtil.getCellString(langWB, misspellsSheet, readRow, LANG_COL_REDUNDENT));
+				String typeStr = XLSUtil.getCellString(langWB, misspellsSheet, readRow, LANG_COL_TYPE);
+				
+				MisspellCorrectionType type = MisspellCorrectionType.toEnum(typeStr);
+				if (type == null)
+					System.out.println("Unknown type in misspel sheet on line " + Integer.toString(readRow));
+				
+				String parent = XLSUtil.getCellString(langWB, misspellsSheet, readRow, LANG_COL_PARENT);
+				if (parent.isEmpty())
+					parent = null;
+				
+				ArrayList<String> arr = new ArrayList<>();
+				for(int i = LANG_COL_ALT_NAME_BEGIN ; i < 100 ; ++i)
+				{
+					String altName = XLSUtil.getCellString(langWB, misspellsSheet, readRow, i);
+					if (!altName.isEmpty())
+						arr.add(altName);
+					else break;
+				}
+				
+				if ((arr.size() > 0) && (type != null))
+				{
+					retLangData.addMisspellCorrection(type, arr.toArray(new String[arr.size()]), isRedundent, parent); 
+				}
+
+				++readRow;
+			}
+			
+			readRow = 1;
+			while (!XLSUtil.isEndRow(langWB, excludedSheet, readRow))
+			{
+				String value = XLSUtil.getCellString(langWB, excludedSheet, readRow, LANG_COL_EXCLUDED);
+				boolean isRegEx = Boolean.valueOf(XLSUtil.getCellString(langWB, excludedSheet, readRow, LANG_COL_ISREGEX));
+				if (!value.isEmpty())
+					retLangData.addExcludedString(value, isRegEx);
+				++readRow;
+			}
+			return retLangData;
+		}		
+		else System.out.println("Error - no proper merge file found");
+		
+		return null;
+	}	
+	
+
+	private static void scanCityInfo(HashMap<String, String> cityToCode) {
 
 		cityByDistance = new ArrayList<LocationEntry>();
 		int readRow = 1;
 		boolean userBreak = false;
+		LocationEntry prevLoc = null;
+		int countCityRepeat = 0;
 		while (!XLSUtil.isEndRow(streetWB, readRow) && !userBreak) {
 			LocationEntry loc = new LocationEntry(streetWB, readRow);
 			++readRow;
-
 			loc = loc.generateCityLocation();
-			if (!cityByDistance.contains(loc)) {
-				GeocoderResult res = getAddressGeodata(getEntryFormattedAdress(loc, null), true);
-				if (res != null) {
-					cityByDistance.add(loc);
+			if (loc.equals(prevLoc))
+			{	
+				++countCityRepeat;
+				if ((countCityRepeat >= MIN_STREET_COUNT_FOR_INCLUDE) && 
+						(cityByDistance.contains(loc) == false)) {
+					GeocoderResult res = GeocodeDataManagerCollection.getAddressGeodata(getEntryFormattedAdress(loc, null), true, false);
+					if ((res != null) && (res.getTypes() != null) && (res.getTypes().size() > 0) &&
+							(res.getTypes().get(0).equals("locality")))
+					{
+						cityToCode.put(res.getFormattedAddress(), loc.getCityId());
+						cityByDistance.add(loc);
+					}
 				}
 			}
-
+			else countCityRepeat = 1;
+			prevLoc = loc;
 		}
 
-		QueryData scanFromRes1 = countryData.getOrCreateQueryData("תל אביב, ישראל");
-		QueryData scanFromRes2 = countryData.getOrCreateQueryData("ירושליים, ישראל");
-		QueryData scanFromRes3 = countryData.getOrCreateQueryData("באר שבע, ישראל");
+		QueryData scanFromRes1 = GeocodeDataManagerCollection.getCountryData().getOrCreateQueryData("תל אביב יפו, ישראל");
+		QueryData scanFromRes2 = GeocodeDataManagerCollection.getCountryData().getOrCreateQueryData("ירושלים, ישראל");
+		QueryData scanFromRes3 = GeocodeDataManagerCollection.getCountryData().getOrCreateQueryData("באר שבע, ישראל");
+		LatLng telHai = new LatLng("33.2340070", "35.5795340");
 		//scanFromRes3 = scanFromRes2 = scanFromRes1;
 		if ((scanFromRes1 != null) && (scanFromRes1.getDescription().isRecordExists())) {
-			final double relLat1 = scanFromRes1.getResults()[0].getGeometry().getLocation().getLat().doubleValue();
-			final double relLng1 = scanFromRes1.getResults()[0].getGeometry().getLocation().getLng().doubleValue();
-			final double relLat2 = scanFromRes2.getResults()[0].getGeometry().getLocation().getLat().doubleValue();
-			final double relLng2 = scanFromRes2.getResults()[0].getGeometry().getLocation().getLng().doubleValue();
-			final double relLat3 = scanFromRes3.getResults()[0].getGeometry().getLocation().getLat().doubleValue();
-			final double relLng3 = scanFromRes3.getResults()[0].getGeometry().getLocation().getLng().doubleValue();
-
+			final LatLng relLatLng1 = scanFromRes1.getResults()[0].getGeometry().getLocation();
+			final LatLng relLatLng2 = scanFromRes2.getResults()[0].getGeometry().getLocation();
+			final LatLng relLatLng3 = scanFromRes3.getResults()[0].getGeometry().getLocation();
+			final LatLng relLatLng4 = telHai;
+			
 			Collections.sort(cityByDistance, new Comparator<LocationEntry>() {
 				public int compare(LocationEntry loc1, LocationEntry loc2) {
-					GeocoderResult res1 = getAddressGeodata(getEntryFormattedAdress(loc1, null), false);
-					GeocoderResult res2 = getAddressGeodata(getEntryFormattedAdress(loc2, null), false);
+					GeocoderResult res1 = GeocodeDataManagerCollection.getAddressGeodata(getEntryFormattedAdress(loc1, null), false, true);
+					GeocoderResult res2 = GeocodeDataManagerCollection.getAddressGeodata(getEntryFormattedAdress(loc2, null), false, true);
 
 					double val = Math.min(
-							distanceFromPoint(res1, relLat1, relLng1),
-							Math.min(distanceFromPoint(res1, relLat2, relLng2),
-									distanceFromPoint(res1, relLat3, relLng3))) -
+							distanceFromPoint(res1, relLatLng1),
+							Math.min(distanceFromPoint(res1, relLatLng2),
+									Math.min(distanceFromPoint(res1, relLatLng3),
+											distanceFromPoint(res1, relLatLng4)))) -
 							Math.min(
-									distanceFromPoint(res2, relLat1, relLng1),
-									Math.min(distanceFromPoint(res2, relLat2, relLng2),
-											distanceFromPoint(res2, relLat3, relLng3)));
+									distanceFromPoint(res2, relLatLng1),
+									Math.min(distanceFromPoint(res2, relLatLng2),
+											Math.min(distanceFromPoint(res2, relLatLng3),
+													distanceFromPoint(res2, relLatLng4))));
 					if (val < 0)
 						return -1;
 					else if (val > 0)
@@ -152,10 +291,11 @@ public class GeocodeRunner {
 						return loc1.getCityName().compareTo(loc2.getCityName());
 				}
 
-				private double distanceFromPoint(GeocoderResult res, double relLat, double relLng) {
+				private double distanceFromPoint(GeocoderResult res, LatLng relLatLng) {
 					double lat = res.getGeometry().getLocation().getLat().doubleValue();
 					double lng = res.getGeometry().getLocation().getLng().doubleValue();
-					double distanceSqr = Math.pow(lat - relLat, 2) + Math.pow(lng - relLng, 2);
+					double distanceSqr = Math.pow(lat - relLatLng.getLat().doubleValue(), 2) + 
+							Math.pow(lng - relLatLng.getLng().doubleValue(), 2);
 					return distanceSqr;
 				}
 
@@ -168,115 +308,35 @@ public class GeocodeRunner {
 		for (int i = 0; i < cityByDistance.size() && GeocodeDataManager.isQueryingAllowed(); ++i) {
 			LocationEntry cityEnt = cityByDistance.get(i);
 			scanStreetInfo(cityEnt);
-
+			GeocoderResult res =  GeocodeDataManagerCollection.getAddressGeodata(getEntryFormattedAdress(cityEnt, null), false, true);
+			if ((res != null) && (res.getFormattedAddress().equals("מודיעין מכבים רעות, ישראל")))
+				break;
 		}
 	}
 
 	private static void scanStreetInfo(LocationEntry cityEnt) {
 		int readRow = 1;
 		boolean userBreak = false;
-		GeocodeDataManager parentMan = getGeocodeManager(getEntryFormattedAdress(cityEnt, null));
+		GeocodeDataManager parentMan = GeocodeDataManagerCollection.getGeocodeManager(getEntryFormattedAdress(cityEnt, null));
 
 		while (!XLSUtil.isEndRow(streetWB, readRow) && GeocodeDataManager.isQueryingAllowed() && !userBreak) {
 			LocationEntry loc = new LocationEntry(streetWB, readRow);
 			++readRow;
 
 			if (cityEnt.isSameCity(loc) && !loc.isCity()) {
-				GeocoderResult res = getAddressGeodata(getEntryFormattedAdress(loc, parentMan), true);
+				GeocodeDataManagerCollection.getAddressGeodata(getEntryFormattedAdress(loc, parentMan), true, true);
 			}
 		}
 	}
-
-	/**
-	 * 
-	 * @param loc
-	 * @return
-	 */
-	private static GeocoderResult getAddressGeodata(String addressName, boolean allowCreate) {
-		if (addressName != null) {
-			GeocodeDataManager man = getGeocodeManager(getParentAddressName(addressName));
-			if (man != null) {
-				QueryData qd = null;
-				for(int i = 0 ; i < 4 ; i++)
-				{
-					String checkName = addressName;
-					if (i >= 2)
-						checkName = removePrefixName(checkName);
-					if (i % 2 == 1)
-						checkName = reversedName(checkName);
-					if (checkName != null)
-					{
-						qd = man.getOrCreateQueryData(checkName, allowCreate);
-					
-						if (isHasRecord(qd))
-							return qd.getResults()[0];
-						//Check if this is a city name
-						if (addressName.indexOf(",") == addressName.lastIndexOf(","))
-							return null;
-					}
-				}
-			}
-		}
-		return null;
-	}
-
 	
-	private static GeocodeDataManager getGeocodeManager(String addressName) {
-		GeocodeDataManager retMan = null;
-		if ((addressName != null) && (addressName.isEmpty() == false)) {
-			if (addressName.equals(DEFAULT_COUNTRY_NAME))
-				retMan = countryData;
-			else {
-				String parentName = getParentAddressName(addressName);
-				GeocodeDataManager parentMan = getGeocodeManager(parentName);
-				if (parentMan != null) {
-					QueryData qd = parentMan.getOrCreateQueryData(addressName, false);
-					String formattedAddress = ((qd != null) && (qd.getResults() != null)) ? qd.getResults()[0]
-							.getFormattedAddress() : null;
-					if (formattedAddress != null) {
-						retMan = cityDataManagers.get(formattedAddress);
-						if (retMan == null) {
-							retMan = new GeocodeDataManager(workingDir, formattedAddress);
-							cityDataManagers.put(formattedAddress, retMan);
-						}
-					}
-				}
-			}
-		}
-		return retMan;
-	}
-
-	public static String getParentAddressName(String addressName) {
-		if (addressName != null) {
-			int delim = addressName.indexOf(",");
-			if (delim != -1)
-				return addressName.substring(delim + 1).trim();
-		}
-		return null;
-
-	}
-
-	/**
-	 * @param qd
-	 * @return
-	 */
-	private static boolean isHasRecord(QueryData qd) {
-		if ((qd != null) && (qd.getDescription().isRecordExists())) {
-			String curType = qd.getResults()[0].getTypes().size() > 0 ?  qd.getResults()[0].getTypes().get(0) : null;
-			if (curType != null) {
-				return ((curType.equals("locality")) || (curType.equals("route")) || (curType.equals("neighborhood")) ||
-						(curType.equals("park")) || (curType.equals("point_of_interest")));
-			}
-		}
-		return false;
-	}
-
-	private static String getEntryFormattedAdress(LocationEntry loc, GeocodeDataManager man) {
+	public static String getEntryFormattedAdress(LocationEntry loc, GeocodeDataManager man) {
 		if (loc.isCity()) {
 			if (loc.getCityName().contains("(") || loc.getCityName().contains(")"))
 				return null;
 			else {
-				return loc.getQueryCityName() + ", " + DEFAULT_COUNTRY_NAME;
+				String name = loc.getQueryCityName();
+				name = name.replaceAll(" - ", " ");
+				return name + ", " + DEFAULT_COUNTRY_NAME;
 			}
 		} else {
 			String areaName = loc.getQueryAreaName();
@@ -284,15 +344,28 @@ public class GeocodeRunner {
 				return null;
 
 			areaName.trim();
-			areaName = areaName.replaceAll("(( \\d+| \\p{InHebrew}))*$", "");
-			areaName = areaName.replaceAll(" סמ\\d+", "");
-			areaName = areaName.replaceAll("^שד ", "שדרות ");
-			areaName = areaName.replaceAll("^שכ ", "שכונת ");
-			areaName = areaName.replaceAll("^ש ", "שכונת ");
-			areaName = areaName.replaceAll("^סמ ", "סמטת ");
-			areaName = areaName.replaceAll("\\bאסוולדו\\b", "אוסוולדו");
-			if (man.getBaseLocationName().contains("באר שבע"))
-				areaName = areaName.replaceAll("\\bאוסוולדו\\b", "אוסבלדו");
+			if (areaName.matches(".* \\p{InHebrew}"))
+				areaName = areaName + "'";
+			
+			String neighborhoodSuffix = "שכונת ";
+			if (areaName.matches("(ש|שכ|שכונה) (\\p{InHebrew}'|י\"\\p{InHebrew})"))
+				areaName = areaName.replaceAll("(ש|שכ|שכונה) (\\p{InHebrew}'|י\"\\p{InHebrew})", "שכונה $2");
+			else if (areaName.equals("גורדון") || areaName.equals("גורדון א ד"))
+				areaName = "א.ד. גורדון";
+			else
+			{
+				areaName = areaName.replaceAll(" סמ\\d+", "");
+				areaName = areaName.replaceAll("( \\d+)*$", "");
+				areaName = areaName.replaceAll("^שד ", "שדרות ");
+				areaName = areaName.replaceAll("^שכ ", neighborhoodSuffix);
+				areaName = areaName.replaceAll("^ש ", neighborhoodSuffix);
+				areaName = areaName.replaceAll("^סמ ", "סמטת ");
+				areaName = areaName.replaceAll("^שכוני ", "שיכוני ");
+				areaName = areaName.replaceAll("\\bאסוולדו\\b", "אוסוולדו");
+				if (man.getBaseLocationName().contains("באר שבע"))
+					areaName = areaName.replaceAll("\\bאוסוולדו\\b", "אוסבלדו");
+			}
+			
 				
 			if ((areaName == null) || (areaName.isEmpty()))
 				return null;
@@ -300,28 +373,4 @@ public class GeocodeRunner {
 			return areaName + ", " + man.getBaseLocationName();
 		}
 	}
-
-	private static String reversedName(String areaName) {
-		String postFix = areaName.substring(areaName.indexOf(","));
-		areaName = areaName.substring(0,areaName.length() - postFix.length());
-		
-		Pattern p = Pattern
-				.compile("^(?<pref>((בי\"ס|בית|שדרות|בסיס|בעל|בן|בר|כיכר|מרכז רפואי|מרכז|ככר|הקריה|קרית|שכונת|פרופ'|פרופסור|פרופ|מלון|קניון|נאות|סמטת|הרב|גבעת|אבא|דרך|הרבי|חטיבת|אזור|חוש|הר|רבי|רחבת|אלוף|ד\"ר|דוקטור|אבו) )?+)(?<part1>(.+?)) (?<!\\b(א|דיר|בן|דה|בר|אל) )(?<part2>.+)$");
-		Matcher mch = p.matcher(areaName);
-		if (mch.find()) {
-			String s = mch.group("pref") + mch.group("part2") + " " + mch.group("part1");
-			return s + postFix;
-		}
-		return null;
-	}
-	
-	private static String removePrefixName(String addressName) {
-		addressName = addressName.replaceAll("^שדרות ", "");
-		addressName = addressName.replaceAll("^שכונת ", "");
-		addressName = addressName.replaceAll("^סמטת ", "");
-		addressName = addressName.replaceAll("^קרית ", "");
-		return addressName;
-	}
-
-
 }

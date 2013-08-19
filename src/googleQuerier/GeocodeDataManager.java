@@ -1,7 +1,5 @@
 package googleQuerier;
 
-import googleQuerier.GeocodeDataManager.QueryData;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -142,10 +140,10 @@ public class GeocodeDataManager {
 				GeocodeQueryDescriptor qd = (GeocodeQueryDescriptor) inpObj.readObject();
 				arrRes.clear();
 				int resultsToExtract = Math.max(qd.getNumExtraRecords(), (qd.isRecordExists() ? 1 : 0));
-				
-				for(;resultsToExtract > 0 ; --resultsToExtract)
+
+				for (; resultsToExtract > 0; --resultsToExtract)
 					arrRes.add((GeocoderResult) inpObj.readObject());
-				
+
 				// System.out.println("Read: " + qd.getQueriedLocationName() + ".");
 
 				addEntryToDictionary(qd, arrRes);
@@ -189,7 +187,7 @@ public class GeocodeDataManager {
 				isSuccefull = tmpFile.renameTo(file);
 			}
 		} catch (Exception e) {
-			
+
 			e.printStackTrace();
 		}
 
@@ -197,17 +195,17 @@ public class GeocodeDataManager {
 
 	}
 
-	
 	public QueryData getOrCreateQueryData(String string) {
 		return getOrCreateQueryData(string, true);
 	}
+
 	public QueryData getOrCreateQueryData(String locationName, boolean allowCreate) {
 		QueryData qd = existingQueries.get(locationName);
 		if ((qd != null) || (!allowCreate)) {
 			return qd;
 		} else
 			return createQueryData(locationName);
-		
+
 	}
 
 	static public boolean isQueryingAllowed() {
@@ -216,7 +214,6 @@ public class GeocodeDataManager {
 
 	private QueryData createQueryData(String locationName) {
 
-		
 		QueryData resQueryData = null;
 		if (isQueryingAllowed()) {
 			boolean doReattempt = true;
@@ -265,22 +262,21 @@ public class GeocodeDataManager {
 				// Save the data internally
 				List<GeocoderResult> tmpResults = geocoderResponse.getResults();
 				ArrayList<GeocoderResult> results = new ArrayList<GeocoderResult>();
-				
-				if (tmpResults != null)
-				{
-					for(int i = 0; i < tmpResults.size(); ++i)
-					{
+
+				if (tmpResults != null) {
+					for (int i = 0; i < tmpResults.size(); ++i) {
 						String resAddress = tmpResults.get(i).getFormattedAddress();
-						boolean isShortNameMatch = (baseLocationNameShort != null) && (resAddress.endsWith(baseLocationNameShort));
-						if	((!resAddress.equals(baseLocationName)) && ((resAddress.endsWith(baseLocationName)) || 
-								(isShortNameMatch))) {
+						boolean isShortNameMatch = (baseLocationNameShort != null) &&
+								(resAddress.endsWith(baseLocationNameShort));
+						if ((!resAddress.equals(baseLocationName)) &&
+								((resAddress.endsWith(baseLocationName)) || (isShortNameMatch))) {
 							results.add(tmpResults.get(i));
 						}
-					}					
+					}
 				}
-				
+
 				orderGeocodeResults(results);
-				
+
 				GeocoderResult res = null;
 				if (results.size() > 0)
 					res = results.get(0);
@@ -304,11 +300,10 @@ public class GeocodeDataManager {
 	private void orderGeocodeResults(ArrayList<GeocoderResult> results) {
 		Collections.sort(results, new Comparator<GeocoderResult>() {
 			public int compare(GeocoderResult loc1, GeocoderResult loc2) {
-				return getTypePriority(loc1) -  getTypePriority(loc2);						
+				return getTypePriority(loc1) - getTypePriority(loc2);
 			}
-			
-			public int getTypePriority(GeocoderResult res)
-			{
+
+			public int getTypePriority(GeocoderResult res) {
 				int matchOrder = res.isPartialMatch() ? 10 : 0;
 				String curType = res.getTypes().size() > 0 ? res.getTypes().get(0) : null;
 				if (curType != null) {
@@ -319,6 +314,8 @@ public class GeocodeDataManager {
 					else if (curType.equals("park"))
 						return matchOrder + 3;
 					else if (curType.equals("point_of_interest"))
+						return matchOrder + 4;
+					else if (curType.equals("establishment"))
 						return matchOrder + 4;
 					else if (curType.equals("locality"))
 						return matchOrder + 5;
@@ -349,7 +346,7 @@ public class GeocodeDataManager {
 	}
 
 	/**
-	 * @param results 
+	 * @param results
 	 * @param resQueryData
 	 */
 	private QueryData addEntryToDictionary(GeocodeQueryDescriptor desc, ArrayList<GeocoderResult> results) {
@@ -358,12 +355,11 @@ public class GeocodeDataManager {
 		if ((results != null) && (results.size() > 0)) {
 			firstRes = addUniqueResultToDictionary(results.get(0));
 			uniqueResults.add(firstRes);
-			for(int i = 1 ; i < results.size() ; ++i)
-			{
+			for (int i = 1; i < results.size(); ++i) {
 				uniqueResults.add(addUniqueResultToDictionary(results.get(i)));
 			}
 		}
-		//Add extra result
+		// Add extra result
 		GeocoderResult[] resArray = null;
 		if (!uniqueResults.isEmpty())
 			resArray = uniqueResults.toArray(new GeocoderResult[uniqueResults.size()]);
@@ -397,7 +393,7 @@ public class GeocodeDataManager {
 			try {
 				outStream.writeObject(resQueryData.getDescription());
 				if (resQueryData.getDescription().isRecordExists()) {
-					for(GeocoderResult res : resQueryData.getResults())
+					for (GeocoderResult res : resQueryData.getResults())
 						outStream.writeObject(res);
 				}
 				outStream.flush();
@@ -422,7 +418,7 @@ public class GeocodeDataManager {
 	 * @return results
 	 */
 	private GeocodeResponse doGeocodeQuery(String locationName) {
-		sleepTimeBetweenQueries = Math.max(sleepTimeBetweenQueries - 0.01, 100);
+		sleepTimeBetweenQueries = Math.max(sleepTimeBetweenQueries - 0.01, 20);
 		if (sleepTimeBetweenQueries > 0) {
 			try {
 				Thread.sleep((long) sleepTimeBetweenQueries);
@@ -443,7 +439,5 @@ public class GeocodeDataManager {
 	public static int getQueriesPerformed() {
 		return queriesPerformed;
 	}
-
-	
 
 }

@@ -15,6 +15,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import utility.XLSUtil;
 
+@SuppressWarnings("unused")
 public class ConvertIsraelStreetDBtoXML {
 
 	static final int ROW_CITY_ID = 2;
@@ -216,6 +217,9 @@ public class ConvertIsraelStreetDBtoXML {
 		streetNameList = generateReplacments(streetNameList, new String[] { "גבעתיים", "גבעתים" });
 		streetNameList = generateReplacments(streetNameList, new String[] { "גבעתיים", "גבעתים" });
 		streetNameList = generateReplacments(streetNameList, new String[] { "קריית", "קרית" });
+		streetNameList = generateReplacments(streetNameList, new String[] { "מנחם אוסישקין", "אוסישקין" });
+		streetNameList = generateReplacments(streetNameList, new String[] { "אברהם שטרן", "שטרן" });
+
 		return streetNameList.toArray(new String[streetNameList.size()]);
 	}
 

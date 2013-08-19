@@ -31,7 +31,7 @@ public class GeocodeQueryDescriptor implements Serializable {
 	public GeocodeQueryDescriptor(String locationName, GeocoderResult res, int size) {
 		this(locationName,
 				res != null ? res.getFormattedAddress() : null,
-				res != null ? res.isPartialMatch() : true,
+				res != null ? res.isPartialMatch() && !res.getFormattedAddress().startsWith(locationName) : true,
 				res != null, size);
 	}
 
@@ -41,6 +41,7 @@ public class GeocodeQueryDescriptor implements Serializable {
 	public String getResultingFormattedName() {
 		return resultedFormatedName;
 	}
+	@Deprecated
 	public boolean isPartialMatch() {
 		return isPartialMatch;
 	}

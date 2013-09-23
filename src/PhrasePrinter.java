@@ -22,7 +22,7 @@ public class PhrasePrinter {
                     JOptionPane.PLAIN_MESSAGE,
                     null,
                     null,
-                    "RealEstateHebrew");
+                    "RealEstateEnglish");
 		// Generate the repository
 		InputStream inpPhraseStream = ConfigurationDatalayer.getStream(sourceName, ConfigSourceType.Pharse);
 		// Load the file

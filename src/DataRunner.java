@@ -3,13 +3,11 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 
-import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.poi.ss.usermodel.Cell;
-
-import org.apache.poi.xssf.usermodel.XSSFCell;
-import org.apache.poi.xssf.usermodel.XSSFRow;
-import org.apache.poi.xssf.usermodel.XSSFSheet;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -125,7 +123,7 @@ public class DataRunner {
 		boolean isSuccess = true;
 		try {
 
-			XSSFWorkbook wb = openXLS(source);
+			Workbook wb = openXLS(source);
 			MessageParser parser = new MessageParser();
 			int readRowNum = 0;
 
@@ -289,7 +287,7 @@ public class DataRunner {
 		return isSuccess;
 	}
 
-	private static void writeComparisonResults(XSSFWorkbook wb, int countParsedMessages,
+	private static void writeComparisonResults(Workbook wb, int countParsedMessages,
 			ArrayList<String> comparisonHeaders, int[] countMessageDiffer) {
 		// TODO Auto-generated method stub
 
@@ -301,7 +299,7 @@ public class DataRunner {
 	 * @throws FileNotFoundException
 	 * @throws IOException
 	 */
-	private static void saveWorkbook(XSSFWorkbook wb, File target) throws FileNotFoundException, IOException {
+	private static void saveWorkbook(Workbook wb, File target) throws FileNotFoundException, IOException {
 		boolean setReadOnly = (target.exists() && target.canWrite()) ? false : true;
 		// try to save to a temporary file than rename
 		String tempFile = extendFileName(target.getAbsolutePath(), ".tmp");
@@ -323,12 +321,12 @@ public class DataRunner {
 	 * @param outputHeaders
 	 * @param failedFieldsDesc
 	 */
-	private static void writeToCell(XSSFWorkbook wb, int rowNum, int outputHeadersOffset,
+	private static void writeToCell(Workbook wb, int rowNum, int outputHeadersOffset,
 			ArrayList<String> outputHeaders, String fieldName, String failedFieldsDesc) {
 		int colNum;
 		colNum = getColumnNum(outputHeadersOffset, outputHeaders, fieldName);
 		if (colNum != -1) {
-			XSSFCell cell = getCell(wb, rowNum, colNum, true);
+			Cell cell = getCell(wb, rowNum, colNum, true);
 			if (cell != null)
 				cell.setCellValue(failedFieldsDesc);
 		}
@@ -340,17 +338,17 @@ public class DataRunner {
 	}
 
 	/*
-	 * private static void copyCellProps(XSSFWorkbook workbook, int rowNum, int colNumSource, int colNumTarget) {
-	 * XSSFCell srcCell = getCell(workbook, rowNum, colNumSource, false); if (srcCell != null) { XSSFCell trgCell =
+	 * private static void copyCellProps(Workbook workbook, int rowNum, int colNumSource, int colNumTarget) {
+	 * Cell srcCell = getCell(workbook, rowNum, colNumSource, false); if (srcCell != null) { Cell trgCell =
 	 * getCell(workbook, rowNum, colNumTarget, true); trgCell.setCellStyle(srcCell.getCellStyle()); } }
 	 */
 
-	private static String getCellString(XSSFWorkbook source, int rowNum, int columnNum) {
-		XSSFCell cell = getCell(source, rowNum, columnNum, false);
+	private static String getCellString(Workbook source, int rowNum, int columnNum) {
+		Cell cell = getCell(source, rowNum, columnNum, false);
 		return getCellValueAsString(cell);
 	}
 
-	private static String getCellValueAsString(XSSFCell cell) {
+	private static String getCellValueAsString(Cell cell) {
 		if (cell != null) {
 			int resType = cell.getCellType();
 			if (resType == Cell.CELL_TYPE_FORMULA)
@@ -375,31 +373,31 @@ public class DataRunner {
 		return "";
 	}
 
-	private static boolean isEndRow(XSSFWorkbook wb, int rowNum) {
-		XSSFSheet sheet = wb.getSheetAt(0);
+	private static boolean isEndRow(Workbook wb, int rowNum) {
+		Sheet sheet = wb.getSheetAt(0);
 		return (sheet == null) || (rowNum > sheet.getLastRowNum());
 	}
 
-	private static int getRowWidth(XSSFWorkbook wb, int rowNum) {
-		XSSFSheet sheet = wb.getSheetAt(0);
+	private static int getRowWidth(Workbook wb, int rowNum) {
+		Sheet sheet = wb.getSheetAt(0);
 		if (sheet != null) {
-			XSSFRow row = sheet.getRow(rowNum);
+			Row row = sheet.getRow(rowNum);
 			if (row != null)
 				return row.getLastCellNum();
 		}
 		return 0;
 	}
 
-	private static XSSFCell getCell(XSSFWorkbook source, int rowNum, int columnNum, boolean createIfNeeded) {
-		XSSFSheet sheet = source.getSheetAt(0);
+	private static Cell getCell(Workbook source, int rowNum, int columnNum, boolean createIfNeeded) {
+		Sheet sheet = source.getSheetAt(0);
 		if ((sheet == null) && (createIfNeeded))
 			sheet = source.createSheet();
 		if (sheet != null) {
-			XSSFRow row = sheet.getRow(rowNum);
+			Row row = sheet.getRow(rowNum);
 			if ((row == null) && (createIfNeeded))
 				row = sheet.createRow(rowNum);
 			if (row != null) {
-				XSSFCell cell = row.getCell(columnNum);
+				Cell cell = row.getCell(columnNum);
 				if ((cell == null) && (createIfNeeded))
 					cell = row.createCell(columnNum);
 				return cell;
@@ -408,9 +406,11 @@ public class DataRunner {
 		return null;
 	}
 
-	private static XSSFWorkbook openXLS(File source) throws Exception {
-		OPCPackage pkg = OPCPackage.open(new FileInputStream(source));
-		return new XSSFWorkbook(pkg);
+	private static Workbook openXLS(File source) throws Exception {
+		Workbook exWorkBook = WorkbookFactory.create(new FileInputStream(source));
+		//OPCPackage pkg = OPCPackage.open(new FileInputStream(source));
+		//new Workbook(new FileInputStream(source))
+		return exWorkBook;
 
 	}
 
@@ -422,13 +422,13 @@ public class DataRunner {
 	 * @param headerOffset
 	 */
 	private static void gatherColumnsFromOutputData(ArrayList<String> expectedHeaders, PostData inData,
-			PostData outData, XSSFWorkbook wb, int headerRowNum, int headerOffset) {
+			PostData outData, Workbook wb, int headerRowNum, int headerOffset) {
 		if (outData != null) {
 			Iterator<PostFieldData> it = outData.getFieldIterator();
 			while (it.hasNext()) {
 				PostFieldData field = it.next();
 				if ((expectedHeaders.contains(field.getName()) == false) && (inData.getField(field.getName()) == null)) {
-					XSSFCell headerCell = getCell(wb, headerRowNum, headerOffset + expectedHeaders.size(), true);
+					Cell headerCell = getCell(wb, headerRowNum, headerOffset + expectedHeaders.size(), true);
 					if (headerCell != null)
 						headerCell.setCellValue(field.getName());
 					expectedHeaders.add(field.getName());
@@ -437,7 +437,7 @@ public class DataRunner {
 		}
 	}
 
-	private static PostData generateInitialePostData(XSSFWorkbook wb, int readRowNum,
+	private static PostData generateInitialePostData(Workbook wb, int readRowNum,
 			ArrayList<String> metaDataHeaders, int metaDataHeadersOffset) throws IOException {
 		PostData postData = basePostData.shalowClone();
 		if (!postData.hasDefinedValue(PostFieldType.BillboardId))

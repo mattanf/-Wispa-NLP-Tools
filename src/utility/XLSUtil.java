@@ -71,7 +71,7 @@ public class XLSUtil {
 					return Double.toString(val);
 
 			case XSSFCell.CELL_TYPE_STRING:
-				return cell.getStringCellValue();
+				return cell.getStringCellValue().trim();
 				// case Cell.CELL_TYPE_FORMULA: return cell.getCellFormula();
 			case XSSFCell.CELL_TYPE_BOOLEAN:
 				return Boolean.toString(cell.getBooleanCellValue());

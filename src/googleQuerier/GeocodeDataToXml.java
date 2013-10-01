@@ -36,11 +36,18 @@ public class GeocodeDataToXml {
 		this.langData = langData;
 	}
 
-	public boolean writeXMLtoFile(String parentName, String parentCode, Iterator<GeocoderResult> results,
+	public boolean writeXMLtoFile(String parentName, String parentCode, Iterator<NamedLocation> results,
 			String workingDir, LocationType parentLocType, Map<String, String> resultToCode) {
-		TreeSet<GeocoderResult> orderedResults = new TreeSet<GeocoderResult>(new Comparator<GeocoderResult>() {
-			public int compare(GeocoderResult res1, GeocoderResult res2) {
-				return res1.getFormattedAddress().compareTo(res2.getFormattedAddress());
+		TreeSet<NamedLocation> orderedResults = new TreeSet<NamedLocation>(new Comparator<NamedLocation>() {
+			public int compare(NamedLocation res1, NamedLocation res2) {
+				int val = res1.getFormattedName().compareTo(res2.getFormattedName());
+				if (val == 0)
+					val = res1.getType().ordinal() - res2.getType().ordinal();
+				if (val == 0)
+					val = Double.compare(res1.getLatitude(), res2.getLatitude());
+				if (val == 0)
+					val = Double.compare(res1.getLongitude(), res2.getLongitude());
+				return val;
 			}
 		});
 		while (results.hasNext()) {
@@ -61,42 +68,36 @@ public class GeocodeDataToXml {
 			Iterator<Entry<NamedLocation, String[]>> itCountryRegions = null;
 			if (resultToCode != null)
 				itCountryRegions = countryRegions.entrySet().iterator();
-			Iterator<GeocoderResult> itRes = orderedResults.iterator();
+			Iterator<NamedLocation> itRes = orderedResults.iterator();
+			String prevAddressName = null;
+			LocationType prevLocationType = null;
 			while ((itRes.hasNext()) || ((itCountryRegions != null) && (itCountryRegions.hasNext()))) {
-				LocationType curLocType;
-				String addressName;
-				String code = null;
 				LatLng lngLat = null;
 				String regionCode = null;
+				NamedLocation key = null;
 				if (itRes.hasNext()) {
-					GeocoderResult res = itRes.next();
-					curLocType = getLocationType(res);
-					addressName = res.getAddressComponents().get(0).getLongName();
-
-					if (resultToCode != null)
-						code = resultToCode.get(res.getFormattedAddress());
-
-					if ((res.getGeometry() != null) && (res.getGeometry().getLocation() != null) &&
-							(res.getGeometry().getLocation().getLat() != null)) {
-						lngLat = res.getGeometry().getLocation();
-					}
-					 if (parentLocType == LocationType.Country)
-						 regionCode = getCountryRegionCode(code, lngLat, curLocType);
-				} else {
-					assert (itCountryRegions != null && itCountryRegions.hasNext());
-					NamedLocation key = itCountryRegions.next().getKey();
-
-					curLocType = LocationType.CountryRegion;
-					addressName = key.getMainName();
-					code = key.getCode();
-
-					if (key.hasLatLong()) {
-						lngLat = new LatLng(new BigDecimal(key.getLatitude()), new BigDecimal(key.getLongitude()));
-					}
-					if (parentLocType == LocationType.Country)
-						regionCode = getCountryRegionCode(code, lngLat, curLocType);
+					key = itRes.next();
 				}
-
+				else {
+					assert (itCountryRegions != null && itCountryRegions.hasNext());
+					key = itCountryRegions.next().getKey();
+				}
+				LocationType curLocType = key.getType();
+				String addressName = key.getMainName();
+				String code = key.getCode();
+				//jump over duplicates
+				if (addressName.equals(prevAddressName) && curLocType.equals(prevLocationType))
+					continue;
+				
+				if (key.hasLatLong()) {
+					lngLat = new LatLng(new BigDecimal(key.getLatitude()), new BigDecimal(key.getLongitude()));
+				}
+				if ((resultToCode != null) && (code == null))
+					code = resultToCode.get(key.getFormattedName());
+				
+				if (parentLocType == LocationType.Country)
+					regionCode = getCountryRegionCode(code, lngLat, curLocType);
+				
 				if (!disqualifyName(addressName)) {
 					if (((parentLocType == LocationType.Country) && ((curLocType == LocationType.City) || (curLocType == LocationType.CountryRegion))) ||
 							((parentLocType == LocationType.City) && ((curLocType == LocationType.CityRegion) || (curLocType == LocationType.Street)))) {
@@ -143,6 +144,10 @@ public class GeocodeDataToXml {
 						}
 					}
 				}
+				
+				prevAddressName = addressName;
+				prevLocationType = curLocType;
+				
 
 			}
 
@@ -166,23 +171,28 @@ public class GeocodeDataToXml {
 		countryRegions = new HashMap<>();
 		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "1", null, "אזור השרון", null, new Double(
 				32.153), new Double(34.863)), null);
-		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "2", null, "אצבע הגליל", null, new Double(
+		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "3", null, "אצבע הגליל", null, new Double(
 				33.233), new Double(35.577)), null);
-		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "3", null, "יהודה ושומרון", null, new Double(
+		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "R101", null, "יהודה ושומרון", null, new Double(
 				31.78), new Double(35.198)), null);
-		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "5", null, "הנגב", null, new Double(
+		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "R102", null, "הנגב", null, new Double(
 				31.25), new Double(34.782)), null);
-		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "6", null, "גבעתיים/רמת גן", null, new Double(
+		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "2", null, "גבעתיים/רמת גן", null, new Double(
 				32.068), new Double(34.816)), new String[] { "8600", "6300" });
-		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "7", null, "באר שבע", null, new Double(31.25),
+		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "4", null, "באר שבע", null, new Double(31.25),
 				new Double(34.782)), new String[] { "9000" });
-		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "8", null, "ירושלים", null, new Double(31.78),
+		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "5", null, "ירושלים", null, new Double(31.78),
 				new Double(35.198)), new String[] { "3000" });
-		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "9", null, "תל אביב", null,
+		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "6", null, "תל אביב", null,
 				new Double(32.080), new Double(34.773)), new String[] { "5000" });
-		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "10", null, "חיפה", null, new Double(32.011),
-				new Double(34.784)), new String[] { "4000" });
+		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "7", null, "חיפה", null, new Double(32.772265),
+				new Double(35.020294)), new String[] { "4000" });
+		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "R103", null, "הכרמל", null, new Double(32.772265),
+				new Double(35.020294)), null);
+		countryRegions.put(new NamedLocation(LocationType.CountryRegion, "8", null, "חולון, בת ים, ראשון", null, new Double(31.918947),
+				new Double(34.812927)), null);//new String[] { "6600", "6200", "8300" });
 	}
+
 
 	private String getCountryRegionCode(String code, LatLng lngLat, LocationType locType) {
 		String shortestDistanceCode = null;
@@ -236,25 +246,5 @@ public class GeocodeDataToXml {
 		return arr.keySet().toArray(new String[arr.size()]);
 	}
 
-	private LocationType getLocationType(GeocoderResult res) {
-		String curType = res.getTypes().size() > 0 ? res.getTypes().get(0) : null;
-		if (curType != null) {
-			if (curType.equals("locality"))
-				return LocationType.City;
-			else if (curType.equals("route"))
-				return LocationType.Street;
-			else if (curType.equals("neighborhood"))
-				return LocationType.CityRegion;
-			else if (curType.equals("park"))
-				return LocationType.CityRegion;
-			else if (curType.equals("point_of_interest"))
-				return LocationType.CityRegion;
-			else if (curType.equals("establishment"))
-				return LocationType.CityRegion;
-			else
-				return null;
-		}
-		return null;
-	}
 
 }

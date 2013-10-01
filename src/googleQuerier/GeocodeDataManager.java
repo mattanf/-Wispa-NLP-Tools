@@ -130,13 +130,13 @@ public class GeocodeDataManager {
 		FileInputStream fis = new FileInputStream(file);
 		ObjectInputStream inpObj = new ObjectInputStream(fis);
 		long fileSize = file.length();
-		long lastCaughtSize = 0;
+		//long lastCaughtSize = 0;
 		try {
 			int MAGIC_NUMBER = 6;
 			ArrayList<GeocoderResult> arrRes = new ArrayList<GeocoderResult>();
 			while (fis.getChannel().position() < fileSize - MAGIC_NUMBER) {
-				lastCaughtSize = fis.getChannel().position();
-				GeocoderResult res = null;
+				//lastCaughtSize = fis.getChannel().position();
+				//GeocoderResult res = null;
 				GeocodeQueryDescriptor qd = (GeocodeQueryDescriptor) inpObj.readObject();
 				arrRes.clear();
 				int resultsToExtract = Math.max(qd.getNumExtraRecords(), (qd.isRecordExists() ? 1 : 0));
@@ -153,7 +153,7 @@ public class GeocodeDataManager {
 			inpObj.close();
 		} catch (IOException e) {
 			System.out.println("Error reading file: " + file.getAbsolutePath() + ".");
-			int res = JOptionPane.showConfirmDialog(null, "Source file is damaged. would you like to recreate?",
+			int res = JOptionPane.showConfirmDialog(null, "ForumSource file is damaged. would you like to recreate?",
 					"WARNING", JOptionPane.YES_NO_OPTION);
 			boolean resaveSuccess = false;
 			if (res == JOptionPane.YES_OPTION) {

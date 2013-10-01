@@ -16,6 +16,7 @@ import com.google.code.geocoder.model.GeocoderResult;
 import com.google.code.geocoder.model.LatLng;
 import com.pairapp.engine.parser.location.LocationLanguageData;
 import com.pairapp.engine.parser.location.LocationLanguageData.MisspellCorrectionType;
+import com.pairapp.engine.parser.location.NamedLocation;
 import com.pairapp.engine.parser.location.NamedLocation.LocationType;
 
 import utility.XLSUtil;
@@ -24,11 +25,12 @@ public class GeocodeRunner {
 
 	private static final String GEOCODE_OUTPUT_DIR = "GeocodeData";
 	private static final String DEFAULT_COUNTRY_NAME = "ישראל";
-	private static final int MIN_STREET_COUNT_FOR_INCLUDE = 20;
+	private static final int MIN_STREET_COUNT_FOR_INCLUDE = 15;
 	private static ArrayList<LocationEntry> cityByDistance = null;
 	private static XSSFWorkbook streetWB;
 	private static String workingDir;
-
+	private static HashMap<String, ArrayList<NamedLocation>> manualLocations = null;
+	
 	/**
 	 * This program recives an xlsx file that contains a list of location. It queries google's geocode web service for
 	 * information, saves the information to the disk, than later updates the xlsx file with the information,
@@ -46,7 +48,7 @@ public class GeocodeRunner {
 		if ((args.length > 1) && (args[0].equals("-merge")))
 			fileToMergeFrom = args[1];
 
-		
+		manualLocations = new HashMap<String, ArrayList<NamedLocation>>();
 		workingDir = new File(".").getCanonicalPath();
 		if (new File(workingDir, "rehovot.xlsx").exists())
 			streetWB = XLSUtil.openXLS("rehovot.xlsx");
@@ -91,7 +93,8 @@ public class GeocodeRunner {
 			while (!XLSUtil.isEndRow(mergeWB, sheetNum, readRow))
 			{
 				String locationName = XLSUtil.getCellString(mergeWB, sheetNum, readRow, 0);
-				if (!("Pass".equals(XLSUtil.getCellString(mergeWB, sheetNum, readRow, 4))))
+				String status = XLSUtil.getCellString(mergeWB, sheetNum, readRow, 4);
+				if ((locationName.isEmpty() == false) && (status.equals("") || status.equals("Fail")))
 				{
 					GeocoderResult res = GeocodeDataManagerCollection.getAddressGeodata(locationName, true, false);
 					hasChanges = true;
@@ -106,7 +109,22 @@ public class GeocodeRunner {
 						XLSUtil.setCellString(mergeWB, sheetNum, readRow, 4, "Pass");
 					}
 				}
-								
+				if ((locationName.isEmpty() == false) && (status.equals("Manual")))
+				{
+					int delim = locationName.indexOf(", ");
+					LocationType locType = LocationType.toEnum(XLSUtil.getCellString(mergeWB, sheetNum, readRow, 1));
+					Double lat = new Double(Double.parseDouble(XLSUtil.getCellString(mergeWB, sheetNum, readRow, 2)));
+					Double lng = new Double(Double.parseDouble(XLSUtil.getCellString(mergeWB, sheetNum, readRow, 3)));
+					if ((locType != null) && (lat != null) && (lng != null) && (delim != -1))
+					{
+						String parentName = locationName.substring(delim + 2);
+							locationName =  locationName.substring(0, delim);
+						if (manualLocations.get(parentName) == null)
+							manualLocations.put(parentName, new ArrayList<NamedLocation>());
+						manualLocations.get(parentName).add(new NamedLocation(locType, null, null, locationName, null, lat, lng));
+					}
+				}
+									
 				++readRow;
 			}
 			
@@ -120,38 +138,120 @@ public class GeocodeRunner {
 		LocationLanguageData langData = readLanuguageDataFromFile(languageExcel);
 		GeocodeDataToXml serializer = new GeocodeDataToXml(langData);
 		
-		ArrayList<GeocoderResult> citiesToWrite = new ArrayList<GeocoderResult>();
+		ArrayList<NamedLocation> citiesToWrite = new ArrayList<NamedLocation>();
 		Iterator<GeocoderResult> cityIt = GeocodeDataManagerCollection.getCountryData().getUniqueGeoResults();
 		while (cityIt.hasNext()) {
 			GeocoderResult cityRes = cityIt.next();
-			GeocodeDataManager man = GeocodeDataManagerCollection.getGeocodeManager(cityRes.getFormattedAddress());
-			if ((man != null) && (man.getUniqueResultCount() > MIN_STREET_COUNT_FOR_INCLUDE)) {
-				
-				String parentName = man.getBaseLocationName();
-				String locationCode = cityToCode.get(parentName);
-				if (locationCode == null)
-				{
-					locationCode = generateCodeIfNeeded(parentName);
-					cityToCode.put(parentName, locationCode);
+			NamedLocation parentEntity = geoResultToNamedEntity(cityRes,GeocodeDataManagerCollection.DEFAULT_COUNTRY_LOCATION);
+			if (parentEntity != null)
+			{
+				citiesToWrite.add(parentEntity);
+			
+				GeocodeDataManager man = GeocodeDataManagerCollection.getGeocodeManager(cityRes.getFormattedAddress());
+				if ((man != null) && (man.getUniqueResultCount() > MIN_STREET_COUNT_FOR_INCLUDE)) {
+					
+					String parentName = man.getBaseLocationName();
+					String locationCode = cityToCode.get(parentName);
+					if (locationCode == null)
+					{
+						locationCode = generateCodeIfNeeded(parentName);
+						cityToCode.put(parentName, locationCode);
+					}
+					if (locationCode == null)
+					{
+						locationCode = parentName;
+					}
+					locationCode = GeocodeDataManagerCollection.DEFAULT_COUNTRY_CODE + "-" + locationCode;
+					ArrayList<NamedLocation> subCityLocations = geoResultsToNamedLocationArray(man.getUniqueGeoResults(), parentEntity);
+					subCityLocations = geoResultsToNamedLocationArray(man.getUniqueGeoResults(), parentEntity);
+					subCityLocations = mergeAutomaticAndManualLocations(parentName, subCityLocations);
+					serializer.writeXMLtoFile(parentName, locationCode, subCityLocations.iterator(), workingDir,
+							LocationType.City, null);
+					
+					
 				}
-				if (locationCode == null)
-				{
-					locationCode = parentName;
-				}
-				locationCode = GeocodeDataManagerCollection.DEFAULT_COUNTRY_CODE + "-" + locationCode;
-				
-				serializer.writeXMLtoFile(parentName, locationCode, man.getUniqueGeoResults(), workingDir,
-						LocationType.City, null);
-				citiesToWrite.add(cityRes);
-				
 			}
+			
 		}		
 		
-		serializer.writeXMLtoFile(GeocodeDataManagerCollection.getCountryData().getBaseLocationName(), GeocodeDataManagerCollection.DEFAULT_COUNTRY_CODE,
+		String countryName = GeocodeDataManagerCollection.getCountryData().getBaseLocationName();
+		citiesToWrite = mergeAutomaticAndManualLocations(countryName, citiesToWrite);
+		serializer.writeXMLtoFile(countryName, GeocodeDataManagerCollection.DEFAULT_COUNTRY_CODE,
 				citiesToWrite.iterator(), workingDir,
 				LocationType.Country, cityToCode);
 	}
 	
+		
+	private static ArrayList<NamedLocation> mergeAutomaticAndManualLocations(String parentName,
+			ArrayList<NamedLocation> citiesToWrite) {
+		
+		ArrayList<NamedLocation> arrayList = manualLocations.get(parentName);
+		if (arrayList != null)
+		{
+			citiesToWrite.addAll(arrayList);
+		}
+		return citiesToWrite;
+	}
+
+	private static ArrayList<NamedLocation> geoResultsToNamedLocationArray(Iterator<GeocoderResult> uniqueGeoResults,
+			NamedLocation parentLocation) {
+		
+		ArrayList<NamedLocation> retArray = new ArrayList<>();
+		while (uniqueGeoResults.hasNext())
+		{
+			GeocoderResult res = uniqueGeoResults.next();
+			NamedLocation retEntity = geoResultToNamedEntity(res, parentLocation);
+			if (retEntity != null)
+				retArray.add(retEntity);
+		}
+		return retArray;
+	}
+
+	/**
+	 * @param res
+	 * @param parentLocation
+	 * @return
+	 */
+	private static NamedLocation geoResultToNamedEntity(GeocoderResult res, NamedLocation parentLocation) {
+		NamedLocation retEntity = null; 
+		LocationType curLocType = getLocationType(res);
+		String addressName = res.getAddressComponents().get(0).getLongName();
+		if  (curLocType != null)
+		{	
+			Double lat = null;
+			Double lng = null;
+			if ((res.getGeometry() != null) && (res.getGeometry().getLocation() != null) &&
+					(res.getGeometry().getLocation().getLat() != null)) {
+				lat = new Double(res.getGeometry().getLocation().getLat().doubleValue());
+				lng = new Double(res.getGeometry().getLocation().getLng().doubleValue());
+			}
+			retEntity = new NamedLocation(curLocType,null,parentLocation,addressName, null,lat, lng);
+		}
+		return retEntity;
+	}
+	
+
+	private static LocationType getLocationType(GeocoderResult res) {
+		String curType = res.getTypes().size() > 0 ? res.getTypes().get(0) : null;
+		if (curType != null) {
+			if (curType.equals("locality"))
+				return LocationType.City;
+			else if (curType.equals("route"))
+				return LocationType.Street;
+			else if (curType.equals("neighborhood"))
+				return LocationType.CityRegion;
+			else if (curType.equals("park"))
+				return LocationType.CityRegion;
+			else if (curType.equals("point_of_interest"))
+				return LocationType.CityRegion;
+			else if (curType.equals("establishment"))
+				return LocationType.CityRegion;
+			else
+				return null;
+		}
+		return null;
+	}
+
 	private static String generateCodeIfNeeded(String cityName) {
 		boolean isAscii = cityName.matches("\\p{ASCII}*");
 		if (!isAscii)
@@ -260,29 +360,31 @@ public class GeocodeRunner {
 		QueryData scanFromRes1 = GeocodeDataManagerCollection.getCountryData().getOrCreateQueryData("תל אביב יפו, ישראל");
 		QueryData scanFromRes2 = GeocodeDataManagerCollection.getCountryData().getOrCreateQueryData("ירושלים, ישראל");
 		QueryData scanFromRes3 = GeocodeDataManagerCollection.getCountryData().getOrCreateQueryData("באר שבע, ישראל");
+		QueryData scanFromRes4 = GeocodeDataManagerCollection.getCountryData().getOrCreateQueryData("חיפה, ישראל");
 		LatLng telHai = new LatLng("33.2340070", "35.5795340");
 		//scanFromRes3 = scanFromRes2 = scanFromRes1;
 		if ((scanFromRes1 != null) && (scanFromRes1.getDescription().isRecordExists())) {
 			final LatLng relLatLng1 = scanFromRes1.getResults()[0].getGeometry().getLocation();
 			final LatLng relLatLng2 = scanFromRes2.getResults()[0].getGeometry().getLocation();
 			final LatLng relLatLng3 = scanFromRes3.getResults()[0].getGeometry().getLocation();
-			final LatLng relLatLng4 = telHai;
+			final LatLng relLatLng4 = scanFromRes4.getResults()[0].getGeometry().getLocation();
+			final LatLng relLatLng5 = telHai;
 			
 			Collections.sort(cityByDistance, new Comparator<LocationEntry>() {
 				public int compare(LocationEntry loc1, LocationEntry loc2) {
 					GeocoderResult res1 = GeocodeDataManagerCollection.getAddressGeodata(getEntryFormattedAdress(loc1, null), false, true);
 					GeocoderResult res2 = GeocodeDataManagerCollection.getAddressGeodata(getEntryFormattedAdress(loc2, null), false, true);
 
-					double val = Math.min(
-							distanceFromPoint(res1, relLatLng1),
+					double val = Math.min(distanceFromPoint(res1, relLatLng1),
 							Math.min(distanceFromPoint(res1, relLatLng2),
 									Math.min(distanceFromPoint(res1, relLatLng3),
-											distanceFromPoint(res1, relLatLng4)))) -
-							Math.min(
-									distanceFromPoint(res2, relLatLng1),
+											Math.min(distanceFromPoint(res1, relLatLng4),
+																	distanceFromPoint(res1, relLatLng5))))) -
+							Math.min(distanceFromPoint(res2, relLatLng1),
 									Math.min(distanceFromPoint(res2, relLatLng2),
 											Math.min(distanceFromPoint(res2, relLatLng3),
-													distanceFromPoint(res2, relLatLng4))));
+													Math.min(distanceFromPoint(res2, relLatLng4),
+																	distanceFromPoint(res2, relLatLng5)))));
 					if (val < 0)
 						return -1;
 					else if (val > 0)

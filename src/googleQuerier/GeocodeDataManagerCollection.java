@@ -6,12 +6,15 @@ import java.util.regex.Pattern;
 import googleQuerier.GeocodeDataManager.QueryData;
 
 import com.google.code.geocoder.model.GeocoderResult;
+import com.pairapp.engine.parser.location.NamedLocation;
+import com.pairapp.engine.parser.location.NamedLocation.LocationType;
 import com.pairapp.utilities.SimpleCache;
 
 public class GeocodeDataManagerCollection {
 	
 	private static final String DEFAULT_COUNTRY_NAME = "ישראל";
 	public static final String DEFAULT_COUNTRY_CODE = "IL";
+	public static final NamedLocation DEFAULT_COUNTRY_LOCATION = new NamedLocation(LocationType.Country, DEFAULT_COUNTRY_CODE, null, DEFAULT_COUNTRY_NAME,null,null,null);
 	private static GeocodeDataManager countryData = null;
 	private static SimpleCache<String, GeocodeDataManager> cityDataManagers = null;
 	

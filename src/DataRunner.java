@@ -3,16 +3,25 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 
+import org.apache.poi.hssf.usermodel.HSSFPalette;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.hssf.util.HSSFColor;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.util.CellRangeAddress;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.TreeMap;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 
@@ -32,20 +41,18 @@ import com.pairapp.utilities.LogLineFormatter;
 public class DataRunner {
 
 	private final static String SUBJECT_MESSAGE = "Message";
-	private final static String SUBJECT_RESULT = "Result";
-	private final static String SUBJECT_FAILED_FIELDS = "Failed Fields";
-	private final static int COMPARISON_FIELD_COUNT = 2;
 	private final static int MAX_HEADERS = 100;
-	private final static String SUBJECT_OPEN_ENDED_OUTPUTS = "...";
 
-	private final static String KEY_LOG_LOCATIONS = "Log locations";
-	private final static String KEY_PROCESS_LOCATIONS = "Process locations";
 	private static PostData basePostData;
 	private static final LocalServiceTestHelper datastoreHelper = new LocalServiceTestHelper(
 			new LocalDatastoreServiceTestConfig());
 
 	private static int startParseRow = -1;
 	private static int endParseRow = 10000000;
+
+	private static CellStyle cellStyleFalseNegative = null;
+	private static CellStyle cellStyleFalsePositive = null;
+	private static CellStyle cellStyleEqual = null;
 
 	// private static int endParseRow = -1;
 	/**
@@ -100,7 +107,7 @@ public class DataRunner {
 				File targetFile = new File(secondaryFileName);
 				if (args.length > fileIndex + 1)
 					targetFile = new File(args[fileIndex + 1]);
-				
+
 				System.out.println("Started parse process");
 				datastoreHelper.setUp();
 				analyzeFile(sourceFile, targetFile);
@@ -118,7 +125,6 @@ public class DataRunner {
 			return fileName + extention;
 	}
 
-	@SuppressWarnings("unchecked")
 	private static boolean analyzeFile(File source, File target) throws Exception {
 		boolean isSuccess = true;
 		try {
@@ -131,15 +137,15 @@ public class DataRunner {
 			 * Read the pre fields header
 			 */
 			basePostData = new PostData();
-			while (!getCellString(wb, readRowNum, 0).equalsIgnoreCase(SUBJECT_MESSAGE) && isSuccess) {
-				String h1 = getCellString(wb, readRowNum, 0).trim();
-				String h2 = getCellString(wb, readRowNum, 1);
+			while (!getCellString(wb, 0, readRowNum, 0).equalsIgnoreCase(SUBJECT_MESSAGE) && isSuccess) {
+				String h1 = getCellString(wb, 0, readRowNum, 0).trim();
+				String h2 = getCellString(wb, 0, readRowNum, 1);
 
 				if ((!h1.isEmpty()) && (!h2.isEmpty()) && (!h1.contains(" "))) {
 					basePostData.addField(h1, null, h2);
 				}
 				++readRowNum;
-				isSuccess = !isEndRow(wb, readRowNum);
+				isSuccess = !isEndRow(wb, 0, readRowNum);
 			}
 			if (!isSuccess)
 				System.err.println("Error: ParserTree could not be find header message.");
@@ -148,133 +154,63 @@ public class DataRunner {
 				if (!isSuccess)
 					System.err.println("Error: ParserTree could not be initialized. Data source could not be found.");
 				else {
-					int metaDataHeadersOffset = 0;
-					ArrayList<String> metaDataHeaders = new ArrayList<String>();
-					int comparisonHeadersOffset = 0;
-					ArrayList<String> comparisonHeaders = new ArrayList<String>();
-					int outputHeadersOffset = 0;
-					ArrayList<String> outputHeaders = new ArrayList<String>();
-					boolean hasComparison = false;
-					boolean isOutputHeaderFixed = false;
+					HashMap<String, Integer> metaDataHeaders = new HashMap<>();
+					HashMap<String, Integer> outputHeaders = new HashMap<>();
 
 					// Read the header
 					int sectionInt = 0;
-					int rowWidth = getRowWidth(wb, readRowNum);
+					int rowWidth = getRowWidth(wb, 0, readRowNum);
 					int headerRowNum = readRowNum;
 					for (int i = 0; i < rowWidth; ++i) {
-						String columnName = getCellString(wb, readRowNum, i).trim();
+						String columnName = getCellString(wb, 0, readRowNum, i).trim();
 						if (columnName.matches("Column\\d+"))
 							columnName = "";
 						switch (sectionInt) {
 						case 0:
 							if ((columnName.isEmpty() == false) &&
 									(columnName.compareToIgnoreCase(SUBJECT_MESSAGE) != 0))
-								metaDataHeaders.add(columnName);
+								metaDataHeaders.put(columnName, i);
 							if (columnName.isEmpty() == true)
 								sectionInt = 1;
 							break;
 						case 1:
-							if (columnName.isEmpty() == false) {
-								hasComparison = true;
-								comparisonHeaders.add(columnName);
-							} else
-								sectionInt = 2;
-							break;
-						case 2:
-							if (columnName.compareToIgnoreCase(SUBJECT_OPEN_ENDED_OUTPUTS) == 0)
-								isOutputHeaderFixed = false;
-							else if ((columnName.isEmpty() == false) &&
-									(columnName.compareToIgnoreCase(SUBJECT_RESULT) != 0) &&
-									(columnName.compareToIgnoreCase(SUBJECT_FAILED_FIELDS) != 0)) {
-								outputHeaders.add(columnName);
-								isOutputHeaderFixed = true;
-							} else
-								sectionInt = 3;
+							outputHeaders.put(columnName, i);
 							break;
 						}
 					}
 					++readRowNum;
 
-					metaDataHeadersOffset = 1;
-					comparisonHeadersOffset = metaDataHeaders.size() + 1 + metaDataHeadersOffset;
-					outputHeadersOffset = comparisonHeaders.size() + 1 + comparisonHeadersOffset;
-					int countParsedMessages = 0;
-
-					if (outputHeaders.size() == 0)
-						outputHeaders = (ArrayList<String>) (comparisonHeaders.clone());
-
-					if (hasComparison) {
-						outputHeaders.add(0, SUBJECT_RESULT);
-						outputHeaders.add(1, SUBJECT_FAILED_FIELDS);
-					}
-
 					int countMessageDiffer[] = new int[MAX_HEADERS];
 					Arrays.fill(countMessageDiffer, 0);
 
-					readRowNum = Math.max(readRowNum, startParseRow);
+					int firstMessageRow = Math.max(readRowNum, startParseRow);
+					TreeMap<String, HashMap<String, Integer>> resultCount = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+					cellStyleFalseNegative = null;
+					cellStyleFalsePositive = null;
+					cellStyleEqual = null;
 
-					// Compare and write the report
-					while (!isEndRow(wb, readRowNum)) {
-						if (readRowNum > endParseRow)
-							break;
-						String messageStr = getCellString(wb, readRowNum, 0);
-						if (!messageStr.isEmpty()) {
+					for (int stage = 0; stage < 2; ++stage) {
+						readRowNum = firstMessageRow;
 
-							PostData inputData = generateInitialePostData(wb, readRowNum, metaDataHeaders,
-									metaDataHeadersOffset);
+						// Compare and write the report
+						while (!isEndRow(wb, 0, readRowNum)) {
+							if (readRowNum > endParseRow)
+								break;
 
-							inputData.setOriginalMessageText(messageStr);
-							PostData outData = parser.parseMessage(inputData);
-							
-							++countParsedMessages;
-							if (!isOutputHeaderFixed)
-								gatherColumnsFromOutputData(outputHeaders, inputData, outData, wb, headerRowNum,
-										outputHeadersOffset);
+							if (((readRowNum - firstMessageRow) % 100) == 0)
+								Logger.getGlobal().info(
+										"Parsing row " + (readRowNum - firstMessageRow) + " in stage " + (stage + 1));
 
-							String resultDesc = "";
-							String failedFieldsDesc = "";
-							if ((outData != null) && (hasComparison == true)) {
-								resultDesc = "Same";
+							if (stage == 0)
+								parseRowMessage(wb, headerRowNum, readRowNum, metaDataHeaders, outputHeaders, parser);
+							else
+								compareRowRecord(wb, readRowNum, metaDataHeaders, outputHeaders, resultCount);
 
-								for (int i = COMPARISON_FIELD_COUNT; i < comparisonHeaders.size(); ++i) {
-									String outputKeyName = comparisonHeaders.get(i);
+							++readRowNum;
 
-									int col = getColumnNum(comparisonHeadersOffset, comparisonHeaders, outputKeyName);
-									if (getCellString(wb, readRowNum, col).compareToIgnoreCase(
-											getFieldSafe(outData, outputKeyName)) != 0) {
-										resultDesc = "Different";
-										if (failedFieldsDesc.isEmpty() == false)
-											failedFieldsDesc += "+";
-										else
-											++countMessageDiffer[0];
-										failedFieldsDesc = failedFieldsDesc + outputKeyName;
-										++countMessageDiffer[i];
-									}
-								}
-							}
-
-							// Write the data
-							// Write the comparison headers
-							writeToCell(wb, readRowNum, outputHeadersOffset, outputHeaders, SUBJECT_RESULT, resultDesc);
-							writeToCell(wb, readRowNum, outputHeadersOffset, outputHeaders, SUBJECT_FAILED_FIELDS,
-									failedFieldsDesc);
-
-							// Output
-							for (int i = hasComparison ? COMPARISON_FIELD_COUNT : 0; i < outputHeaders.size(); ++i) {
-								String fieldName = outputHeaders.get(i);
-								String value = getFieldSafe(outData, fieldName);
-								writeToCell(wb, readRowNum, outputHeadersOffset, outputHeaders, fieldName, value);
-							}
 						}
-						++readRowNum;
-	
 					}
-					
-					// Write the comparison results
-						//if (hasComparison)
-						//{
-						//	writeComparisonResults(wb, countParsedMessages,comparisonHeaders, countMessageDiffer);
-						//}
+					saveComparisonResults(wb, resultCount);
 					saveWorkbook(wb, target);
 				}
 			}
@@ -287,10 +223,269 @@ public class DataRunner {
 		return isSuccess;
 	}
 
-	private static void writeComparisonResults(Workbook wb, int countParsedMessages,
-			ArrayList<String> comparisonHeaders, int[] countMessageDiffer) {
-		// TODO Auto-generated method stub
+	private static void compareRowRecord(Workbook wb, int readRowNum, HashMap<String, Integer> metaDataHeaders,
+			HashMap<String, Integer> outputHeaders, TreeMap<String, HashMap<String, Integer>> resultCount) {
+		String messageStr = getCellString(wb, 0, readRowNum, 0);
+		if (messageStr.isEmpty() == false) {
+			String isSpamString = getCellString(wb, 0, readRowNum, metaDataHeaders.get("PostIsSpam"));
+			boolean isSpam = !isSpamString.isEmpty() && (Boolean.valueOf(isSpamString) == true);
+			boolean isOffer = metaDataHeaders.containsKey("PostPurpose") ? getCellString(wb, 0, readRowNum,
+					metaDataHeaders.get("PostPurpose")).equalsIgnoreCase("Offer") : false;
+			boolean isSeek = metaDataHeaders.containsKey("PostPurpose") ? getCellString(wb, 0, readRowNum,
+					metaDataHeaders.get("PostPurpose")).equalsIgnoreCase("Seek") : false;
+					
+			Iterator<Entry<String, Integer>> outputHeaderIt = outputHeaders.entrySet().iterator();
+			while (outputHeaderIt.hasNext()) {
+				Entry<String, Integer> outputHeader = outputHeaderIt.next();
+				String fieldName = outputHeader.getKey();
+				Integer origHeaderPos = metaDataHeaders.get(fieldName);
+				if (origHeaderPos != null) {
+					// Generate the cell styles to use
+					if (cellStyleFalseNegative == null) {
+						cellStyleFalseNegative = createCellStyle(wb, false, true);
+						cellStyleFalsePositive = createCellStyle(wb, true, false);
+						cellStyleEqual = createCellStyle(wb, false, false);
+					}
 
+					// Compare the values
+					String origValue = normNumeric(getCellString(wb, 0, readRowNum, origHeaderPos));
+					String genValue = normNumeric(getCellString(wb, 0, readRowNum, outputHeader.getValue()));
+					
+					boolean isFalseNegative = (origValue.isEmpty() == false) && (genValue.isEmpty() == true);
+					boolean isFalsePositive = !isFalseNegative && origValue.compareToIgnoreCase(genValue) != 0;
+					boolean isSame = !isFalseNegative && !isFalsePositive;
+					
+					
+					addComparisonData(fieldName, isSpam, isOffer, isSeek, isFalseNegative, isFalsePositive, isSame,
+							resultCount);
+
+					Cell cell = getCell(wb, 0, readRowNum, outputHeader.getValue(), true);
+					if (cell != null) {
+						cell.setCellStyle(isFalseNegative ? cellStyleFalseNegative
+								: (isFalsePositive ? cellStyleFalsePositive : cellStyleEqual));
+					}
+				}
+			}
+		}
+	}
+
+	private static String normNumeric(String cellString) {
+		if (cellString != null)
+		{
+			cellString = cellString.trim();
+			if (cellString.matches("-?\\d+(\\.0*)?"))
+			{
+				int delim = cellString.indexOf(".");
+				if (delim != -1)
+					cellString = cellString.substring(0, delim);
+				return Long.toString(Long.parseLong(cellString));
+			}
+			if (cellString != null && cellString.matches("-?\\d+\\.\\d+"))
+			{
+				return Double.toString(Double.parseDouble(cellString));
+			}
+		}
+		return cellString.trim();
+	}
+
+	private static void addComparisonData(String fieldName, boolean isSpam, boolean isOffer, boolean isSeek,
+			boolean isFalseNegative, boolean isFalsePositive, boolean isSame,
+			TreeMap<String, HashMap<String, Integer>> resultCount) {
+		HashMap<String, Integer> fieldMap = resultCount.get(fieldName);
+		if (fieldMap == null) {
+			fieldMap = new HashMap<>();
+			resultCount.put(fieldName, fieldMap);
+		}
+		String baseKey = isFalseNegative ? "FN" : (isFalsePositive ? "FP" : "EQ");
+		incrementFieldInMap(fieldMap, baseKey);
+		if (isSpam == false) {
+			incrementFieldInMap(fieldMap, "NoSpam-" + baseKey);
+			if (isSeek == true)
+				incrementFieldInMap(fieldMap, "Seek-NoSpam-" + baseKey);
+			if (isOffer == true)
+				incrementFieldInMap(fieldMap, "Offer-NoSpam-" + baseKey);
+		}
+	}
+
+	/**
+	 * @param fieldMap
+	 * @param key
+	 */
+	private static void incrementFieldInMap(HashMap<String, Integer> fieldMap, String key) {
+		Integer value = fieldMap.get(key);
+		if (value == null)
+			value = new Integer(1);
+		else
+			value = value + 1;
+		fieldMap.put(key, value);
+	}
+
+	private static void saveComparisonResults(Workbook wb, TreeMap<String, HashMap<String, Integer>> resultCount) {
+		Sheet oldSheet = wb.getSheet("Comparison");
+		if (oldSheet != null)
+			wb.removeSheetAt(wb.getSheetIndex(oldSheet));
+		Sheet compSheet = wb.createSheet("Comparison");
+		wb.setSheetOrder("Comparison", 1);
+		int sheetNum = wb.getSheetIndex(compSheet);
+		CellStyle cellStyleHeader = wb.createCellStyle();
+		cellStyleHeader.setAlignment(CellStyle.ALIGN_CENTER);
+		
+		compSheet.setColumnWidth(0, 4500);
+		CellStyle cellStylePrecentage = wb.createCellStyle();
+		cellStylePrecentage.setDataFormat(wb.createDataFormat().getFormat("0.0%"));
+		CellStyle cellStylePrecentageBL = wb.createCellStyle();
+		cellStylePrecentageBL.setDataFormat(wb.createDataFormat().getFormat("0.0%"));
+		cellStylePrecentageBL.setBorderRight(CellStyle.BORDER_MEDIUM);
+		
+		// Write the header
+		int columnIndex = 0;
+		for (int i = 0; i < 4; ++i) {
+			getCell(wb, sheetNum, 1, columnIndex, true).setCellStyle(cellStyleHeader);
+			getCell(wb, sheetNum, 1, ++columnIndex, true).setCellValue("FN");
+			getCell(wb, sheetNum, 1, columnIndex, true).setCellStyle(cellStyleHeader);
+			getCell(wb, sheetNum, 1, ++columnIndex, true).setCellValue("FP");
+			getCell(wb, sheetNum, 1, columnIndex, true).setCellStyle(cellStyleHeader);
+			getCell(wb, sheetNum, 1, ++columnIndex, true).setCellValue("Equal");
+		}
+
+		getCell(wb, sheetNum, 0, 1, true).setCellStyle(cellStyleHeader);
+		getCell(wb, sheetNum, 0, 1, true).setCellValue("All");
+		getCell(wb, sheetNum, 0, 4, true).setCellStyle(cellStyleHeader);
+		getCell(wb, sheetNum, 0, 4, true).setCellValue("No Spam");
+		getCell(wb, sheetNum, 0, 7, true).setCellStyle(cellStyleHeader);
+		getCell(wb, sheetNum, 0, 7, true).setCellValue("Seek (No Spam)");
+		getCell(wb, sheetNum, 0, 10, true).setCellStyle(cellStyleHeader);
+		getCell(wb, sheetNum, 0, 10, true).setCellValue("Offer (No Spam)");
+		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 1, 3));
+		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 4, 6));
+		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 7, 9));
+		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 10, 13));
+
+		// Write the data
+		int writeRow = 2;
+		Iterator<Entry<String, HashMap<String, Integer>>> fieldIt = resultCount.entrySet().iterator();
+		while (fieldIt.hasNext()) {
+			Entry<String, HashMap<String, Integer>> compData = fieldIt.next();
+			String fieldName = compData.getKey();
+
+			Integer falseNegative = nullToZero(compData.getValue().get("FN"));
+			Integer falsePositive = nullToZero(compData.getValue().get("FP"));
+			Integer equal = nullToZero(compData.getValue().get("EQ"));
+			Integer total = falseNegative + falsePositive + equal;
+
+			Integer falseNegativeNoSpam = nullToZero(compData.getValue().get("NoSpam-FN"));
+			Integer falsePositiveNoSpam = nullToZero(compData.getValue().get("NoSpam-FP"));
+			Integer equalNoSpam = nullToZero(compData.getValue().get("NoSpam-EQ"));
+			Integer totalNoSpam = falseNegativeNoSpam + falsePositiveNoSpam + equalNoSpam;
+
+			Integer falseNegativeNoSpamSeek = nullToZero(compData.getValue().get("Seek-NoSpam-FN"));
+			Integer falsePositiveNoSpamSeek = nullToZero(compData.getValue().get("Seek-NoSpam-FP"));
+			Integer equalNoSpamSeek = nullToZero(compData.getValue().get("Seek-NoSpam-EQ"));
+			Integer totalNoSpamSeek = falseNegativeNoSpamSeek + falsePositiveNoSpamSeek + equalNoSpamSeek;
+
+			Integer falseNegativeNoSpamOffer = nullToZero(compData.getValue().get("Offer-NoSpam-FN"));
+			Integer falsePositiveNoSpamOffer = nullToZero(compData.getValue().get("Offer-NoSpam-FP"));
+			Integer equalNoSpamOffer = nullToZero(compData.getValue().get("Offer-NoSpam-EQ"));
+			Integer totalNoSpamOffer = falseNegativeNoSpamOffer + falsePositiveNoSpamOffer + equalNoSpamOffer;
+
+			columnIndex = -1;
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellValue(fieldName);
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(falseNegative + "/" + total);
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(falsePositive + "/" + total);
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(equal + "/" + total);
+
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true)
+					.setCellFormula(falseNegativeNoSpam + "/" + totalNoSpam);
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true)
+					.setCellFormula(falsePositiveNoSpam + "/" + totalNoSpam);
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(equalNoSpam + "/" + totalNoSpam);
+			if (!fieldName.equals("PostIsSpam"))
+			{
+				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+						falseNegativeNoSpamSeek + "/" + totalNoSpamSeek);
+				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+						falsePositiveNoSpamSeek + "/" + totalNoSpamSeek);
+				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+						equalNoSpamSeek + "/" + totalNoSpamSeek);
+
+				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+						falseNegativeNoSpamOffer + "/" + totalNoSpamOffer);
+				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+						falsePositiveNoSpamOffer + "/" + totalNoSpamOffer);
+				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+						equalNoSpamOffer + "/" + totalNoSpamOffer);
+			}
+			for (int i = 0; i < 13; ++i)
+				getCell(wb, sheetNum, writeRow, i, true).setCellStyle(i % 3 == 0 ? cellStylePrecentageBL : cellStylePrecentage);
+			
+			++writeRow;
+		}
+
+	}
+
+	private static Integer nullToZero(Integer integer) {
+		return integer == null ? new Integer(0) : integer;
+	}
+
+	/**
+	 * @param wb
+	 * @param isFalsePositive
+	 * @param isFalseNegative
+	 * @return
+	 */
+	private static CellStyle createCellStyle(Workbook wb, boolean isFalsePositive, boolean isFalseNegative) {
+		CellStyle cellStyle = wb.createCellStyle(); // CellStyle cellStyle = cell.getCellStyle();
+		cellStyle.setFillPattern(CellStyle.SOLID_FOREGROUND);
+		if (wb instanceof HSSFWorkbook) {
+			HSSFPalette palette = ((HSSFWorkbook) wb).getCustomPalette();
+			// get the color which most closely matches the color you want to use
+			HSSFColor myColor = isFalsePositive ? palette.findSimilarColor(256, 64, 64) : (isFalseNegative ? palette
+					.findSimilarColor(256, 256, 64) : palette.findSimilarColor(64, 256, 64));
+
+			// get the palette index of that color
+			short palIndex = myColor.getIndex();
+
+			// code to get the style for the cell goes here
+			cellStyle.setFillForegroundColor(palIndex);
+
+		} else
+			cellStyle.setFillForegroundColor(isFalsePositive ? IndexedColors.RED.getIndex()
+					: isFalseNegative ? IndexedColors.YELLOW.getIndex() : IndexedColors.GREEN.getIndex());
+		return cellStyle;
+	}
+
+	/**
+	 * @param wb
+	 * @param headerRowNum
+	 * @param readRowNum
+	 * @param metaDataHeaders
+	 * @param outputHeaders
+	 * @param parser
+	 * @return
+	 * @throws IOException
+	 */
+	private static void parseRowMessage(Workbook wb, int headerRowNum, int readRowNum,
+			HashMap<String, Integer> metaDataHeaders, HashMap<String, Integer> outputHeaders, MessageParser parser)
+			throws IOException {
+		String messageStr = getCellString(wb, 0, readRowNum, 0);
+		if (!messageStr.isEmpty()) {
+
+			PostData inputData = generateInitialePostData(wb, readRowNum, metaDataHeaders);
+
+			inputData.setOriginalMessageText(messageStr);
+			PostData outData = parser.parseMessage(inputData);
+
+			gatherColumnsFromOutputData(outputHeaders, inputData, outData, wb, headerRowNum, metaDataHeaders.size() + 2);
+
+			// Write the data
+			Iterator<Entry<String, Integer>> headerIt = outputHeaders.entrySet().iterator();
+			while (headerIt.hasNext()) {
+				Entry<String, Integer> next = headerIt.next();
+				String fieldName = next.getKey();
+				String value = getFieldSafe(outData, fieldName);
+				getCell(wb, 0, readRowNum, next.getValue(), true).setCellValue(value);
+			}
+		}
 	}
 
 	/**
@@ -314,37 +509,14 @@ public class DataRunner {
 		}
 	}
 
-	/**
-	 * @param wb
-	 * @param rowNum
-	 * @param outputHeadersOffset
-	 * @param outputHeaders
-	 * @param failedFieldsDesc
-	 */
-	private static void writeToCell(Workbook wb, int rowNum, int outputHeadersOffset,
-			ArrayList<String> outputHeaders, String fieldName, String failedFieldsDesc) {
-		int colNum;
-		colNum = getColumnNum(outputHeadersOffset, outputHeaders, fieldName);
-		if (colNum != -1) {
-			Cell cell = getCell(wb, rowNum, colNum, true);
-			if (cell != null)
-				cell.setCellValue(failedFieldsDesc);
-		}
-	}
-
-	private static int getColumnNum(int offset, ArrayList<String> array, String key) {
-		int index = array.indexOf(key);
-		return index == -1 ? -1 : index + offset;
-	}
-
 	/*
-	 * private static void copyCellProps(Workbook workbook, int rowNum, int colNumSource, int colNumTarget) {
-	 * Cell srcCell = getCell(workbook, rowNum, colNumSource, false); if (srcCell != null) { Cell trgCell =
-	 * getCell(workbook, rowNum, colNumTarget, true); trgCell.setCellStyle(srcCell.getCellStyle()); } }
+	 * private static void copyCellProps(Workbook workbook, int rowNum, int colNumSource, int colNumTarget) { Cell
+	 * srcCell = getCell(workbook, rowNum, colNumSource, false); if (srcCell != null) { Cell trgCell = getCell(workbook,
+	 * rowNum, colNumTarget, true); trgCell.setCellStyle(srcCell.getCellStyle()); } }
 	 */
 
-	private static String getCellString(Workbook source, int rowNum, int columnNum) {
-		Cell cell = getCell(source, rowNum, columnNum, false);
+	private static String getCellString(Workbook source, int sheetNum, int rowNum, int columnNum) {
+		Cell cell = getCell(source, sheetNum, rowNum, columnNum, false);
 		return getCellValueAsString(cell);
 	}
 
@@ -357,7 +529,7 @@ public class DataRunner {
 			case Cell.CELL_TYPE_NUMERIC:
 				double val = cell.getNumericCellValue();
 				if (val - Math.floor(val) == 0)
-					return Long.toString((int) val);
+					return Long.toString((long) val);
 				else
 					return Double.toString(val);
 
@@ -373,13 +545,13 @@ public class DataRunner {
 		return "";
 	}
 
-	private static boolean isEndRow(Workbook wb, int rowNum) {
-		Sheet sheet = wb.getSheetAt(0);
+	private static boolean isEndRow(Workbook wb, int sheetNum, int rowNum) {
+		Sheet sheet = wb.getSheetAt(sheetNum);
 		return (sheet == null) || (rowNum > sheet.getLastRowNum());
 	}
 
-	private static int getRowWidth(Workbook wb, int rowNum) {
-		Sheet sheet = wb.getSheetAt(0);
+	private static int getRowWidth(Workbook wb, int sheetNum, int rowNum) {
+		Sheet sheet = wb.getSheetAt(sheetNum);
 		if (sheet != null) {
 			Row row = sheet.getRow(rowNum);
 			if (row != null)
@@ -388,10 +560,12 @@ public class DataRunner {
 		return 0;
 	}
 
-	private static Cell getCell(Workbook source, int rowNum, int columnNum, boolean createIfNeeded) {
-		Sheet sheet = source.getSheetAt(0);
-		if ((sheet == null) && (createIfNeeded))
+	private static Cell getCell(Workbook source, int sheetNum, int rowNum, int columnNum, boolean createIfNeeded) {
+		Sheet sheet = source.getSheetAt(sheetNum);
+		if ((sheet == null) && (createIfNeeded) && (sheetNum == 0))
 			sheet = source.createSheet();
+		else if ((sheet == null) && (sheetNum != 0))
+			throw new IllegalArgumentException("Unknown sheet number");
 		if (sheet != null) {
 			Row row = sheet.getRow(rowNum);
 			if ((row == null) && (createIfNeeded))
@@ -408,8 +582,8 @@ public class DataRunner {
 
 	private static Workbook openXLS(File source) throws Exception {
 		Workbook exWorkBook = WorkbookFactory.create(new FileInputStream(source));
-		//OPCPackage pkg = OPCPackage.open(new FileInputStream(source));
-		//new Workbook(new FileInputStream(source))
+		// OPCPackage pkg = OPCPackage.open(new FileInputStream(source));
+		// new Workbook(new FileInputStream(source))
 		return exWorkBook;
 
 	}
@@ -421,24 +595,25 @@ public class DataRunner {
 	 * @param wb
 	 * @param headerOffset
 	 */
-	private static void gatherColumnsFromOutputData(ArrayList<String> expectedHeaders, PostData inData,
-			PostData outData, Workbook wb, int headerRowNum, int headerOffset) {
+	private static void gatherColumnsFromOutputData(Map<String, Integer> expectedHeaders, PostData inData,
+			PostData outData, Workbook wb, int headerRowNum, int expectedHeadersOffset) {
 		if (outData != null) {
 			Iterator<PostFieldData> it = outData.getFieldIterator();
 			while (it.hasNext()) {
 				PostFieldData field = it.next();
-				if ((expectedHeaders.contains(field.getName()) == false) && (inData.getField(field.getName()) == null)) {
-					Cell headerCell = getCell(wb, headerRowNum, headerOffset + expectedHeaders.size(), true);
+				if ((expectedHeaders.containsKey(field.getName()) == false) &&
+						(inData.getField(field.getName()) == null)) {
+					Cell headerCell = getCell(wb, 0, headerRowNum, expectedHeadersOffset + expectedHeaders.size(), true);
 					if (headerCell != null)
 						headerCell.setCellValue(field.getName());
-					expectedHeaders.add(field.getName());
+					expectedHeaders.put(field.getName(), expectedHeadersOffset + expectedHeaders.size());
 				}
 			}
 		}
 	}
 
-	private static PostData generateInitialePostData(Workbook wb, int readRowNum,
-			ArrayList<String> metaDataHeaders, int metaDataHeadersOffset) throws IOException {
+	private static PostData generateInitialePostData(Workbook wb, int readRowNum, Map<String, Integer> metaDataHeaders)
+			throws IOException {
 		PostData postData = basePostData.shalowClone();
 		if (!postData.hasDefinedValue(PostFieldType.BillboardId))
 			postData.addField(PostFieldType.BillboardId,
@@ -456,14 +631,14 @@ public class DataRunner {
 		if (!postData.hasDefinedValue(PostFieldType.PostTimeCreated))
 			postData.addField(PostFieldType.PostTimeCreated, VariantDate.generateInstance(1, 1, 2000));
 
-		for (int i = 0; i < metaDataHeaders.size(); ++i) {
-			String fieldName = metaDataHeaders.get(i);
-			if (fieldName.startsWith("Forum") || fieldName.equals("BillboardId") || fieldName.equals("PostId") ||
-					fieldName.equals("PostTimeCreated") || fieldName.equals("PostTimeUpdated") ||
-					fieldName.equals("PostPublisherId")) {
+		Iterator<Entry<String, Integer>> metaDataIt = metaDataHeaders.entrySet().iterator();
+		while (metaDataIt.hasNext()) {
+			Entry<String, Integer> next = metaDataIt.next();
+			String fieldName = next.getKey();
+			if (isOrigMessageProperty(fieldName)) {
 				try {
-					String val = getCellString(wb, readRowNum, i + metaDataHeadersOffset);
-					postData.addField(metaDataHeaders.get(i), null, val);
+					String val = getCellString(wb, 0, readRowNum, next.getValue());
+					postData.addField(fieldName, null, val);
 				} catch (Exception e) {
 				}
 			}
@@ -471,6 +646,15 @@ public class DataRunner {
 		}
 
 		return postData;
+	}
+
+	/**
+	 * @param fieldName
+	 */
+	private static boolean isOrigMessageProperty(String fieldName) {
+		return (fieldName.startsWith("Forum") || fieldName.equals("BillboardId") || fieldName.equals("PostId") ||
+				fieldName.equals("PostTimeCreated") || fieldName.equals("PostTimeUpdated") || fieldName
+					.equals("PostPublisherId"));
 	}
 
 	static private String getFieldSafe(PostData outData, String name) {

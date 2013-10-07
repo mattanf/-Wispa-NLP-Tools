@@ -14,6 +14,9 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.xssf.usermodel.XSSFCell;
+import org.apache.poi.xssf.usermodel.XSSFCellStyle;
+import org.apache.poi.xssf.usermodel.XSSFColor;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -29,6 +32,7 @@ import java.util.logging.Logger;
 
 import com.google.appengine.tools.development.testing.LocalDatastoreServiceTestConfig;
 import com.google.appengine.tools.development.testing.LocalServiceTestHelper;
+import com.google.gwt.thirdparty.javascript.jscomp.graph.GraphColoring.Color;
 import com.pairapp.engine.parser.MessageParser;
 import com.pairapp.engine.parser.data.PostData;
 import com.pairapp.engine.parser.data.PostFieldData;
@@ -40,6 +44,17 @@ import com.pairapp.utilities.LogLineFormatter;
 
 public class DataRunner {
 
+	final static int STYLE_CENTER = 1 << 0;
+	final static int STYLE_BORDER_RIGHT = 1 << 1;
+	final static int STYLE_BORDER_LEFT = 1 << 2;
+	final static int STYLE_BORDER_BOTTOM = 1 << 3;
+	final static int STYLE_PERCENTAGE = 1 << 4;
+	
+	final static int STYLE_COLOR_GREEN = 1 << 16;
+	final static int STYLE_COLOR_YELLOW = 1 << 17;
+	final static int STYLE_COLOR_RED = 1 << 18;
+	final static int STYLE_COLOR = STYLE_COLOR_GREEN | STYLE_COLOR_YELLOW | STYLE_COLOR_RED;
+	
 	private final static String SUBJECT_MESSAGE = "Message";
 	private final static int MAX_HEADERS = 100;
 
@@ -53,6 +68,9 @@ public class DataRunner {
 	private static CellStyle cellStyleFalseNegative = null;
 	private static CellStyle cellStyleFalsePositive = null;
 	private static CellStyle cellStyleEqual = null;
+	
+	private static HashMap<Integer, CellStyle> cellStyles;
+	private static int usedColorIndexRunner = 0;
 
 	// private static int endParseRow = -1;
 	/**
@@ -108,6 +126,7 @@ public class DataRunner {
 				if (args.length > fileIndex + 1)
 					targetFile = new File(args[fileIndex + 1]);
 
+				cellStyles = new HashMap<>();
 				System.out.println("Started parse process");
 				datastoreHelper.setUp();
 				analyzeFile(sourceFile, targetFile);
@@ -240,13 +259,7 @@ public class DataRunner {
 				String fieldName = outputHeader.getKey();
 				Integer origHeaderPos = metaDataHeaders.get(fieldName);
 				if (origHeaderPos != null) {
-					// Generate the cell styles to use
-					if (cellStyleFalseNegative == null) {
-						cellStyleFalseNegative = createCellStyle(wb, false, true);
-						cellStyleFalsePositive = createCellStyle(wb, true, false);
-						cellStyleEqual = createCellStyle(wb, false, false);
-					}
-
+					
 					// Compare the values
 					String origValue = normNumeric(getCellString(wb, 0, readRowNum, origHeaderPos));
 					String genValue = normNumeric(getCellString(wb, 0, readRowNum, outputHeader.getValue()));
@@ -258,13 +271,9 @@ public class DataRunner {
 					
 					addComparisonData(fieldName, isSpam, isOffer, isSeek, isFalseNegative, isFalsePositive, isSame,
 							resultCount);
-
-					Cell cell = getCell(wb, 0, readRowNum, outputHeader.getValue(), true);
-					if (cell != null) {
-						cell.setCellStyle(isFalseNegative ? cellStyleFalseNegative
-								: (isFalsePositive ? cellStyleFalsePositive : cellStyleEqual));
-					}
-				}
+					setCellStyle(wb, 0, readRowNum, outputHeader.getValue(), isFalseNegative ? STYLE_COLOR_YELLOW :
+							(isFalsePositive ? STYLE_COLOR_RED : STYLE_COLOR_GREEN));
+				}					
 			}
 		}
 	}
@@ -327,39 +336,35 @@ public class DataRunner {
 		Sheet compSheet = wb.createSheet("Comparison");
 		wb.setSheetOrder("Comparison", 1);
 		int sheetNum = wb.getSheetIndex(compSheet);
-		CellStyle cellStyleHeader = wb.createCellStyle();
-		cellStyleHeader.setAlignment(CellStyle.ALIGN_CENTER);
 		
 		compSheet.setColumnWidth(0, 4500);
-		CellStyle cellStylePrecentage = wb.createCellStyle();
-		cellStylePrecentage.setDataFormat(wb.createDataFormat().getFormat("0.0%"));
-		CellStyle cellStylePrecentageBL = wb.createCellStyle();
-		cellStylePrecentageBL.setDataFormat(wb.createDataFormat().getFormat("0.0%"));
-		cellStylePrecentageBL.setBorderRight(CellStyle.BORDER_MEDIUM);
+		
 		
 		// Write the header
 		int columnIndex = 0;
+		setCellStyle(wb, sheetNum, 1, columnIndex, STYLE_CENTER | STYLE_BORDER_BOTTOM | STYLE_BORDER_RIGHT);
 		for (int i = 0; i < 4; ++i) {
-			getCell(wb, sheetNum, 1, columnIndex, true).setCellStyle(cellStyleHeader);
 			getCell(wb, sheetNum, 1, ++columnIndex, true).setCellValue("FN");
-			getCell(wb, sheetNum, 1, columnIndex, true).setCellStyle(cellStyleHeader);
+			setCellStyle(wb, sheetNum, 1, columnIndex, STYLE_CENTER | STYLE_BORDER_BOTTOM | STYLE_BORDER_LEFT);
 			getCell(wb, sheetNum, 1, ++columnIndex, true).setCellValue("FP");
-			getCell(wb, sheetNum, 1, columnIndex, true).setCellStyle(cellStyleHeader);
+			setCellStyle(wb, sheetNum, 1, columnIndex, STYLE_CENTER | STYLE_BORDER_BOTTOM);
 			getCell(wb, sheetNum, 1, ++columnIndex, true).setCellValue("Equal");
+			setCellStyle(wb, sheetNum, 1, columnIndex, STYLE_CENTER | STYLE_BORDER_BOTTOM | STYLE_BORDER_RIGHT);
 		}
 
-		getCell(wb, sheetNum, 0, 1, true).setCellStyle(cellStyleHeader);
+		setCellStyle(wb, sheetNum, 0, 1, STYLE_CENTER | STYLE_BORDER_RIGHT | STYLE_BORDER_LEFT);
 		getCell(wb, sheetNum, 0, 1, true).setCellValue("All");
-		getCell(wb, sheetNum, 0, 4, true).setCellStyle(cellStyleHeader);
+		setCellStyle(wb, sheetNum, 0, 4, STYLE_CENTER | STYLE_BORDER_RIGHT | STYLE_BORDER_LEFT);
 		getCell(wb, sheetNum, 0, 4, true).setCellValue("No Spam");
-		getCell(wb, sheetNum, 0, 7, true).setCellStyle(cellStyleHeader);
+		setCellStyle(wb, sheetNum, 0, 7, STYLE_CENTER | STYLE_BORDER_RIGHT | STYLE_BORDER_LEFT);
 		getCell(wb, sheetNum, 0, 7, true).setCellValue("Seek (No Spam)");
-		getCell(wb, sheetNum, 0, 10, true).setCellStyle(cellStyleHeader);
+		setCellStyle(wb, sheetNum, 0, 10, STYLE_CENTER | STYLE_BORDER_RIGHT | STYLE_BORDER_LEFT);
+		setCellStyle(wb, sheetNum, 0, 12, STYLE_CENTER | STYLE_BORDER_RIGHT | STYLE_BORDER_LEFT);
 		getCell(wb, sheetNum, 0, 10, true).setCellValue("Offer (No Spam)");
 		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 1, 3));
 		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 4, 6));
 		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 7, 9));
-		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 10, 13));
+		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 10, 12));
 
 		// Write the data
 		int writeRow = 2;
@@ -416,44 +421,82 @@ public class DataRunner {
 						equalNoSpamOffer + "/" + totalNoSpamOffer);
 			}
 			for (int i = 0; i < 13; ++i)
-				getCell(wb, sheetNum, writeRow, i, true).setCellStyle(i % 3 == 0 ? cellStylePrecentageBL : cellStylePrecentage);
+				setCellStyle(wb, sheetNum, writeRow, i, STYLE_PERCENTAGE | (i % 3 == 0 ? STYLE_BORDER_RIGHT : 0) | (i % 3 == 1 ? STYLE_BORDER_LEFT : 0));
 			
 			++writeRow;
 		}
 
 	}
 
+	private static void setCellStyle(Workbook wb, int sheetNum, int rowNum, int columnNum, int style) {
+		Cell cell = getCell(wb, sheetNum, rowNum, columnNum, true);
+		if (cell != null)
+		{
+			CellStyle cellStyle = cellStyles.get(style);
+			if (cellStyle == null)
+			{
+				cellStyle = wb.createCellStyle();
+				if ((style & STYLE_CENTER) != 0)
+					cellStyle.setAlignment(CellStyle.ALIGN_CENTER);
+				if ((style & STYLE_BORDER_BOTTOM) != 0)
+					cellStyle.setBorderBottom(CellStyle.BORDER_MEDIUM);
+				if ((style & STYLE_BORDER_LEFT) != 0)
+					cellStyle.setBorderLeft(CellStyle.BORDER_MEDIUM);
+				if ((style & STYLE_BORDER_RIGHT) != 0)
+					cellStyle.setBorderRight(CellStyle.BORDER_MEDIUM);
+				if ((style & STYLE_PERCENTAGE) != 0)
+					cellStyle.setDataFormat(wb.createDataFormat().getFormat("0.0%"));
+				if ((style & STYLE_COLOR) != 0)
+				{
+					//Calc the color
+					short[] colorRGB;
+					if ((style & STYLE_COLOR_GREEN) != 0)
+						colorRGB = new short[] {64, 255, 64};
+					else if ((style & STYLE_COLOR_YELLOW) != 0)
+						colorRGB = new short[] {255, 255, 64};
+					else //if ((style & STYLE_COLOR_RED) != 0)
+						colorRGB = new short[] {255, 64, 64};
+					
+					cellStyle.setFillPattern(CellStyle.SOLID_FOREGROUND);
+					if (wb instanceof HSSFWorkbook) {
+						HSSFPalette palette = ((HSSFWorkbook) wb).getCustomPalette();
+						// get the color which most closely matches the color you want to use
+						
+						
+						HSSFColor color =  palette.findSimilarColor(colorRGB[0], colorRGB[1], colorRGB[2]);
+						if ((color.getTriplet()[0] != colorRGB[0]) || (color.getTriplet()[1] != colorRGB[1]) || (color.getTriplet()[2] != colorRGB[2]))
+						{
+							try {
+								short colorIndex = (short)(63 - usedColorIndexRunner);
+								palette.setColorAtIndex((short) colorIndex, (byte)colorRGB[0], (byte)colorRGB[1], (byte)colorRGB[2]);
+								HSSFColor tmpColor =  palette.getColor(colorIndex);
+								++usedColorIndexRunner;
+								
+								if (tmpColor != null)
+									color = tmpColor;
+							}
+							catch(Throwable e) {
+							}
+						}
+
+						// code to get the style for the cell goes here
+						cellStyle.setFillForegroundColor(color.getIndex());
+
+					} else if  (cellStyle instanceof XSSFCellStyle)
+						((XSSFCellStyle)cellStyle).setFillForegroundColor(new XSSFColor(new java.awt.Color(colorRGB[0], colorRGB[1], colorRGB[2])));
+				}
+				cellStyles.put(style,cellStyle);
+			}
+			cell.setCellStyle(cellStyle);
+		}
+		
+	}
+
 	private static Integer nullToZero(Integer integer) {
 		return integer == null ? new Integer(0) : integer;
 	}
 
-	/**
-	 * @param wb
-	 * @param isFalsePositive
-	 * @param isFalseNegative
-	 * @return
-	 */
-	private static CellStyle createCellStyle(Workbook wb, boolean isFalsePositive, boolean isFalseNegative) {
-		CellStyle cellStyle = wb.createCellStyle(); // CellStyle cellStyle = cell.getCellStyle();
-		cellStyle.setFillPattern(CellStyle.SOLID_FOREGROUND);
-		if (wb instanceof HSSFWorkbook) {
-			HSSFPalette palette = ((HSSFWorkbook) wb).getCustomPalette();
-			// get the color which most closely matches the color you want to use
-			HSSFColor myColor = isFalsePositive ? palette.findSimilarColor(256, 64, 64) : (isFalseNegative ? palette
-					.findSimilarColor(256, 256, 64) : palette.findSimilarColor(64, 256, 64));
-
-			// get the palette index of that color
-			short palIndex = myColor.getIndex();
-
-			// code to get the style for the cell goes here
-			cellStyle.setFillForegroundColor(palIndex);
-
-		} else
-			cellStyle.setFillForegroundColor(isFalsePositive ? IndexedColors.RED.getIndex()
-					: isFalseNegative ? IndexedColors.YELLOW.getIndex() : IndexedColors.GREEN.getIndex());
-		return cellStyle;
-	}
-
+	
 	/**
 	 * @param wb
 	 * @param headerRowNum

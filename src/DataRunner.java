@@ -54,6 +54,7 @@ public class DataRunner {
 	final static int STYLE_COLOR_YELLOW = 1 << 17;
 	final static int STYLE_COLOR_RED = 1 << 18;
 	final static int STYLE_COLOR = STYLE_COLOR_GREEN | STYLE_COLOR_YELLOW | STYLE_COLOR_RED;
+	final static int STYLE_COLOR_LIGHT = 1 << 19;
 	
 	private final static String SUBJECT_MESSAGE = "Message";
 	private final static int MAX_HEADERS = 100;
@@ -65,10 +66,6 @@ public class DataRunner {
 	private static int startParseRow = -1;
 	private static int endParseRow = 10000000;
 
-	private static CellStyle cellStyleFalseNegative = null;
-	private static CellStyle cellStyleFalsePositive = null;
-	private static CellStyle cellStyleEqual = null;
-	
 	private static HashMap<Integer, CellStyle> cellStyles;
 	private static int usedColorIndexRunner = 0;
 
@@ -204,10 +201,7 @@ public class DataRunner {
 
 					int firstMessageRow = Math.max(readRowNum, startParseRow);
 					TreeMap<String, HashMap<String, Integer>> resultCount = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-					cellStyleFalseNegative = null;
-					cellStyleFalsePositive = null;
-					cellStyleEqual = null;
-
+					
 					for (int stage = 0; stage < 2; ++stage) {
 						readRowNum = firstMessageRow;
 
@@ -246,14 +240,15 @@ public class DataRunner {
 			HashMap<String, Integer> outputHeaders, TreeMap<String, HashMap<String, Integer>> resultCount) {
 		String messageStr = getCellString(wb, 0, readRowNum, 0);
 		if (messageStr.isEmpty() == false) {
-			String isSpamString = metaDataHeaders.containsKey("PostIsSpam") ? getCellString(wb, 0, readRowNum, metaDataHeaders.get("PostIsSpam")) : "False";
-			boolean isSpam = !isSpamString.isEmpty() && (Boolean.valueOf(isSpamString) == true);
-			boolean isOffer = metaDataHeaders.containsKey("PostPurpose") ? getCellString(wb, 0, readRowNum,
-					metaDataHeaders.get("PostPurpose")).equalsIgnoreCase("Offer") : false;
-			boolean isSeek = metaDataHeaders.containsKey("PostPurpose") ? getCellString(wb, 0, readRowNum,
-					metaDataHeaders.get("PostPurpose")).equalsIgnoreCase("Seek") : false;
-					
-			Iterator<Entry<String, Integer>> outputHeaderIt = outputHeaders.entrySet().iterator();
+			String isValidString = metaDataHeaders.containsKey("PostIsValid") ? getCellString(wb, 0, readRowNum, metaDataHeaders.get("PostIsValid")) : "True";
+			boolean isValid = Boolean.valueOf(isValidString);
+			String purposeString =  metaDataHeaders.containsKey("PostPurpose") ? getCellString(wb, 0, readRowNum,
+					metaDataHeaders.get("PostPurpose")) : "Unknown";
+			boolean isOffer = purposeString.equalsIgnoreCase("Offer");
+			boolean isSeek = purposeString.equalsIgnoreCase("Seek");
+			if ((isOffer == isSeek) && (purposeString.isEmpty() == false))
+				isSeek = false;
+		Iterator<Entry<String, Integer>> outputHeaderIt = outputHeaders.entrySet().iterator();
 			while (outputHeaderIt.hasNext()) {
 				Entry<String, Integer> outputHeader = outputHeaderIt.next();
 				String fieldName = outputHeader.getKey();
@@ -269,10 +264,10 @@ public class DataRunner {
 					boolean isSame = !isFalseNegative && !isFalsePositive;
 					
 					
-					addComparisonData(fieldName, isSpam, isOffer, isSeek, isFalseNegative, isFalsePositive, isSame,
+					addComparisonData(fieldName, isValid, isOffer, isSeek, isFalseNegative, isFalsePositive, isSame,
 							resultCount);
-					setCellStyle(wb, 0, readRowNum, outputHeader.getValue(), isFalseNegative ? STYLE_COLOR_YELLOW :
-							(isFalsePositive ? STYLE_COLOR_RED : STYLE_COLOR_GREEN));
+					setCellStyle(wb, 0, readRowNum, outputHeader.getValue(), (isFalseNegative ? STYLE_COLOR_YELLOW :
+							(isFalsePositive ? STYLE_COLOR_RED : STYLE_COLOR_GREEN)) | (isValid ? 0 : STYLE_COLOR_LIGHT));
 				}					
 			}
 		}
@@ -297,7 +292,7 @@ public class DataRunner {
 		return cellString.trim();
 	}
 
-	private static void addComparisonData(String fieldName, boolean isSpam, boolean isOffer, boolean isSeek,
+	private static void addComparisonData(String fieldName, boolean isValid, boolean isOffer, boolean isSeek,
 			boolean isFalseNegative, boolean isFalsePositive, boolean isSame,
 			TreeMap<String, HashMap<String, Integer>> resultCount) {
 		HashMap<String, Integer> fieldMap = resultCount.get(fieldName);
@@ -307,12 +302,12 @@ public class DataRunner {
 		}
 		String baseKey = isFalseNegative ? "FN" : (isFalsePositive ? "FP" : "EQ");
 		incrementFieldInMap(fieldMap, baseKey);
-		if (isSpam == false) {
-			incrementFieldInMap(fieldMap, "NoSpam-" + baseKey);
+		if (isValid == true) {
+			incrementFieldInMap(fieldMap, "ValidMessage-" + baseKey);
 			if (isSeek == true)
-				incrementFieldInMap(fieldMap, "Seek-NoSpam-" + baseKey);
+				incrementFieldInMap(fieldMap, "Seek-ValidMessage-" + baseKey);
 			if (isOffer == true)
-				incrementFieldInMap(fieldMap, "Offer-NoSpam-" + baseKey);
+				incrementFieldInMap(fieldMap, "Offer-ValidMessage-" + baseKey);
 		}
 	}
 
@@ -355,12 +350,12 @@ public class DataRunner {
 		setCellStyle(wb, sheetNum, 0, 1, STYLE_CENTER | STYLE_BORDER_RIGHT | STYLE_BORDER_LEFT);
 		getCell(wb, sheetNum, 0, 1, true).setCellValue("All");
 		setCellStyle(wb, sheetNum, 0, 4, STYLE_CENTER | STYLE_BORDER_RIGHT | STYLE_BORDER_LEFT);
-		getCell(wb, sheetNum, 0, 4, true).setCellValue("No Spam");
+		getCell(wb, sheetNum, 0, 4, true).setCellValue("Only Valid");
 		setCellStyle(wb, sheetNum, 0, 7, STYLE_CENTER | STYLE_BORDER_RIGHT | STYLE_BORDER_LEFT);
-		getCell(wb, sheetNum, 0, 7, true).setCellValue("Seek (No Spam)");
+		getCell(wb, sheetNum, 0, 7, true).setCellValue("Seek (Only Valid)");
 		setCellStyle(wb, sheetNum, 0, 10, STYLE_CENTER | STYLE_BORDER_RIGHT | STYLE_BORDER_LEFT);
 		setCellStyle(wb, sheetNum, 0, 12, STYLE_CENTER | STYLE_BORDER_RIGHT | STYLE_BORDER_LEFT);
-		getCell(wb, sheetNum, 0, 10, true).setCellValue("Offer (No Spam)");
+		getCell(wb, sheetNum, 0, 10, true).setCellValue("Offer (Only Valid)");
 		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 1, 3));
 		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 4, 6));
 		compSheet.addMergedRegion(new CellRangeAddress(0, 0, 7, 9));
@@ -378,20 +373,20 @@ public class DataRunner {
 			Integer equal = nullToZero(compData.getValue().get("EQ"));
 			Integer total = falseNegative + falsePositive + equal;
 
-			Integer falseNegativeNoSpam = nullToZero(compData.getValue().get("NoSpam-FN"));
-			Integer falsePositiveNoSpam = nullToZero(compData.getValue().get("NoSpam-FP"));
-			Integer equalNoSpam = nullToZero(compData.getValue().get("NoSpam-EQ"));
-			Integer totalNoSpam = falseNegativeNoSpam + falsePositiveNoSpam + equalNoSpam;
+			Integer falseNegativeValidMessage = nullToZero(compData.getValue().get("ValidMessage-FN"));
+			Integer falsePositiveValidMessage = nullToZero(compData.getValue().get("ValidMessage-FP"));
+			Integer equalValidMessage = nullToZero(compData.getValue().get("ValidMessage-EQ"));
+			Integer totalValidMessage = falseNegativeValidMessage + falsePositiveValidMessage + equalValidMessage;
 
-			Integer falseNegativeNoSpamSeek = nullToZero(compData.getValue().get("Seek-NoSpam-FN"));
-			Integer falsePositiveNoSpamSeek = nullToZero(compData.getValue().get("Seek-NoSpam-FP"));
-			Integer equalNoSpamSeek = nullToZero(compData.getValue().get("Seek-NoSpam-EQ"));
-			Integer totalNoSpamSeek = falseNegativeNoSpamSeek + falsePositiveNoSpamSeek + equalNoSpamSeek;
+			Integer falseNegativeValidMessageSeek = nullToZero(compData.getValue().get("Seek-ValidMessage-FN"));
+			Integer falsePositiveValidMessageSeek = nullToZero(compData.getValue().get("Seek-ValidMessage-FP"));
+			Integer equalValidMessageSeek = nullToZero(compData.getValue().get("Seek-ValidMessage-EQ"));
+			Integer totalValidMessageSeek = falseNegativeValidMessageSeek + falsePositiveValidMessageSeek + equalValidMessageSeek;
 
-			Integer falseNegativeNoSpamOffer = nullToZero(compData.getValue().get("Offer-NoSpam-FN"));
-			Integer falsePositiveNoSpamOffer = nullToZero(compData.getValue().get("Offer-NoSpam-FP"));
-			Integer equalNoSpamOffer = nullToZero(compData.getValue().get("Offer-NoSpam-EQ"));
-			Integer totalNoSpamOffer = falseNegativeNoSpamOffer + falsePositiveNoSpamOffer + equalNoSpamOffer;
+			Integer falseNegativeValidMessageOffer = nullToZero(compData.getValue().get("Offer-ValidMessage-FN"));
+			Integer falsePositiveValidMessageOffer = nullToZero(compData.getValue().get("Offer-ValidMessage-FP"));
+			Integer equalValidMessageOffer = nullToZero(compData.getValue().get("Offer-ValidMessage-EQ"));
+			Integer totalValidMessageOffer = falseNegativeValidMessageOffer + falsePositiveValidMessageOffer + equalValidMessageOffer;
 
 			columnIndex = -1;
 			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellValue(fieldName);
@@ -400,26 +395,26 @@ public class DataRunner {
 			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(equal + "/" + total);
 
 			getCell(wb, sheetNum, writeRow, ++columnIndex, true)
-					.setCellFormula(falseNegativeNoSpam + "/" + totalNoSpam);
+					.setCellFormula(falseNegativeValidMessage + "/" + totalValidMessage);
 			getCell(wb, sheetNum, writeRow, ++columnIndex, true)
-					.setCellFormula(falsePositiveNoSpam + "/" + totalNoSpam);
-			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(equalNoSpam + "/" + totalNoSpam);
-			if (!fieldName.equals("PostIsSpam"))
-			{
-				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
-						falseNegativeNoSpamSeek + "/" + totalNoSpamSeek);
-				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
-						falsePositiveNoSpamSeek + "/" + totalNoSpamSeek);
-				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
-						equalNoSpamSeek + "/" + totalNoSpamSeek);
+					.setCellFormula(falsePositiveValidMessage + "/" + totalValidMessage);
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true)
+					.setCellFormula(equalValidMessage + "/" + totalValidMessage);
+			
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+					falseNegativeValidMessageSeek + "/" + totalValidMessageSeek);
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+					falsePositiveValidMessageSeek + "/" + totalValidMessageSeek);
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+					equalValidMessageSeek + "/" + totalValidMessageSeek);
 
-				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
-						falseNegativeNoSpamOffer + "/" + totalNoSpamOffer);
-				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
-						falsePositiveNoSpamOffer + "/" + totalNoSpamOffer);
-				getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
-						equalNoSpamOffer + "/" + totalNoSpamOffer);
-			}
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+					falseNegativeValidMessageOffer + "/" + totalValidMessageOffer);
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+					falsePositiveValidMessageOffer + "/" + totalValidMessageOffer);
+			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
+					equalValidMessageOffer + "/" + totalValidMessageOffer);
+			
 			for (int i = 0; i < 13; ++i)
 				setCellStyle(wb, sheetNum, writeRow, i, STYLE_PERCENTAGE | (i % 3 == 0 ? STYLE_BORDER_RIGHT : 0) | (i % 3 == 1 ? STYLE_BORDER_LEFT : 0));
 			
@@ -456,6 +451,13 @@ public class DataRunner {
 						colorRGB = new short[] {255, 255, 64};
 					else //if ((style & STYLE_COLOR_RED) != 0)
 						colorRGB = new short[] {255, 64, 64};
+					
+					if ((style & STYLE_COLOR_LIGHT) != 0)
+					{
+						colorRGB[0] = (short) (255 - ((255 - colorRGB[0]) / 2));
+						colorRGB[1] = (short) (255 - ((255 - colorRGB[1]) / 2));
+						colorRGB[2] = (short) (255 - ((255 - colorRGB[2]) / 2));
+					}
 					
 					cellStyle.setFillPattern(CellStyle.SOLID_FOREGROUND);
 					if (wb instanceof HSSFWorkbook) {

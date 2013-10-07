@@ -227,7 +227,7 @@ public class DataRunner {
 			HashMap<String, Integer> outputHeaders, TreeMap<String, HashMap<String, Integer>> resultCount) {
 		String messageStr = getCellString(wb, 0, readRowNum, 0);
 		if (messageStr.isEmpty() == false) {
-			String isSpamString = getCellString(wb, 0, readRowNum, metaDataHeaders.get("PostIsSpam"));
+			String isSpamString = metaDataHeaders.containsKey("PostIsSpam") ? getCellString(wb, 0, readRowNum, metaDataHeaders.get("PostIsSpam")) : "False";
 			boolean isSpam = !isSpamString.isEmpty() && (Boolean.valueOf(isSpamString) == true);
 			boolean isOffer = metaDataHeaders.containsKey("PostPurpose") ? getCellString(wb, 0, readRowNum,
 					metaDataHeaders.get("PostPurpose")).equalsIgnoreCase("Offer") : false;

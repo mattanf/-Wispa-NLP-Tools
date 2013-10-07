@@ -273,14 +273,14 @@ public class DataRunner {
 		if (cellString != null)
 		{
 			cellString = cellString.trim();
-			if (cellString.matches("-?\\d+(\\.0*)?"))
+			if (cellString.matches("-?\\d+(,\\d{3})*(\\.0*)?"))
 			{
 				int delim = cellString.indexOf(".");
 				if (delim != -1)
 					cellString = cellString.substring(0, delim);
 				return Long.toString(Long.parseLong(cellString));
 			}
-			if (cellString != null && cellString.matches("-?\\d+\\.\\d+"))
+			if (cellString != null && cellString.matches("-?\\d+(,\\d{3})*\\.\\d+"))
 			{
 				return Double.toString(Double.parseDouble(cellString));
 			}

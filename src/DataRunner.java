@@ -50,11 +50,12 @@ public class DataRunner {
 	final static int STYLE_BORDER_BOTTOM = 1 << 3;
 	final static int STYLE_PERCENTAGE = 1 << 4;
 	
-	final static int STYLE_COLOR_GREEN = 1 << 16;
-	final static int STYLE_COLOR_YELLOW = 1 << 17;
-	final static int STYLE_COLOR_RED = 1 << 18;
-	final static int STYLE_COLOR = STYLE_COLOR_GREEN | STYLE_COLOR_YELLOW | STYLE_COLOR_RED;
-	final static int STYLE_COLOR_LIGHT = 1 << 19;
+	final static int STYLE_COLOR_LIGHT = 1 << 16;
+	final static int STYLE_COLOR_GREEN = 1 << 17;
+	final static int STYLE_COLOR_YELLOW = 1 << 18;
+	final static int STYLE_COLOR_RED = 1 << 19;
+	final static int STYLE_COLOR_GRAY = 1 << 20;
+	final static int STYLE_COLOR = STYLE_COLOR_GREEN | STYLE_COLOR_YELLOW | STYLE_COLOR_RED | STYLE_COLOR_GRAY;
 	
 	private final static String SUBJECT_MESSAGE = "Message";
 	private final static int MAX_HEADERS = 100;
@@ -85,7 +86,7 @@ public class DataRunner {
 		ConsoleHandler handler = new ConsoleHandler();
 		handler.setFormatter(new LogLineFormatter());
 		Logger.getGlobal().addHandler(handler);
-		Logger.getGlobal().setLevel(Level.SEVERE);
+		Logger.getGlobal().setLevel(Level.WARNING);
 
 		int fileIndex = 0;
 		for (int i = 0; i < args.length; ++i) {
@@ -211,8 +212,13 @@ public class DataRunner {
 								break;
 
 							if (((readRowNum - firstMessageRow) % 100) == 0)
+							{	
+								Level prevLevel = Logger.getGlobal().getLevel();
+								Logger.getGlobal().setLevel(Level.INFO);
 								Logger.getGlobal().info(
 										"Parsing row " + (readRowNum - firstMessageRow) + " in stage " + (stage + 1));
+								Logger.getGlobal().setLevel(prevLevel);
+							}
 
 							if (stage == 0)
 								parseRowMessage(wb, headerRowNum, readRowNum, metaDataHeaders, outputHeaders, parser);
@@ -246,9 +252,8 @@ public class DataRunner {
 					metaDataHeaders.get("PostPurpose")) : "Unknown";
 			boolean isOffer = purposeString.equalsIgnoreCase("Offer");
 			boolean isSeek = purposeString.equalsIgnoreCase("Seek");
-			if ((isOffer == isSeek) && (purposeString.isEmpty() == false))
-				isSeek = false;
-		Iterator<Entry<String, Integer>> outputHeaderIt = outputHeaders.entrySet().iterator();
+			
+			Iterator<Entry<String, Integer>> outputHeaderIt = outputHeaders.entrySet().iterator();
 			while (outputHeaderIt.hasNext()) {
 				Entry<String, Integer> outputHeader = outputHeaderIt.next();
 				String fieldName = outputHeader.getKey();
@@ -256,18 +261,48 @@ public class DataRunner {
 				if (origHeaderPos != null) {
 					
 					// Compare the values
-					String origValue = normNumeric(getCellString(wb, 0, readRowNum, origHeaderPos));
 					String genValue = normNumeric(getCellString(wb, 0, readRowNum, outputHeader.getValue()));
+					String origValuesString = getCellString(wb, 0, readRowNum, origHeaderPos);
+					String origValues[] = origValuesString.split("\\|");
+					int wrongness = 3;
 					
-					boolean isFalseNegative = (origValue.isEmpty() == false) && (genValue.isEmpty() == true);
-					boolean isFalsePositive = !isFalseNegative && origValue.compareToIgnoreCase(genValue) != 0;
-					boolean isSame = !isFalseNegative && !isFalsePositive;
-					
-					
-					addComparisonData(fieldName, isValid, isOffer, isSeek, isFalseNegative, isFalsePositive, isSame,
-							resultCount);
-					setCellStyle(wb, 0, readRowNum, outputHeader.getValue(), (isFalseNegative ? STYLE_COLOR_YELLOW :
-							(isFalsePositive ? STYLE_COLOR_RED : STYLE_COLOR_GREEN)) | (isValid ? 0 : STYLE_COLOR_LIGHT));
+					for(String origValue : origValues)
+					{	
+						if ((!origValue.isEmpty()) || (origValues.length == 1))
+						{
+							if (origValue.equalsIgnoreCase("[Empty]"))
+								origValue = "";
+							
+							origValue = normNumeric(origValue);
+							boolean isFalseNegative = (origValue.isEmpty() == false) && (genValue.isEmpty() == true);
+							boolean isFalsePositive = !isFalseNegative && origValue.compareToIgnoreCase(genValue) != 0;
+							boolean isSame = !isFalseNegative && !isFalsePositive;
+							
+							if (isFalsePositive) 
+								wrongness = Math.min(wrongness, 2);
+							else if (isFalseNegative) 
+								wrongness = Math.min(wrongness, 1);
+							else if (isSame)
+								wrongness = Math.min(wrongness, 0);
+						}
+						else
+						{
+							Logger.getGlobal().severe("Precalculated value of " + outputHeader.getKey() + " in row " + (readRowNum + 1) + " has an illegal pipe symbol. Consider adding the word \"[Empty]\" or removing the pipe");
+						}
+						
+					}
+					if (wrongness != 3)
+					{
+						addComparisonData(fieldName, isValid, isOffer, isSeek, wrongness == 2, wrongness == 1, wrongness == 0,
+								resultCount);
+						setCellStyle(wb, 0, readRowNum, outputHeader.getValue(), (wrongness >= 2 ? STYLE_COLOR_RED :
+								(wrongness >= 1 ? STYLE_COLOR_YELLOW : STYLE_COLOR_GREEN)) | (isValid ? 0 : STYLE_COLOR_LIGHT));
+					}
+					else
+					{
+						setCellStyle(wb, 0, readRowNum, outputHeader.getValue(), STYLE_COLOR_GRAY);
+					}
+							
 				}					
 			}
 		}
@@ -293,7 +328,7 @@ public class DataRunner {
 	}
 
 	private static void addComparisonData(String fieldName, boolean isValid, boolean isOffer, boolean isSeek,
-			boolean isFalseNegative, boolean isFalsePositive, boolean isSame,
+			boolean isFalsePositive, boolean isFalseNegative, boolean isSame,
 			TreeMap<String, HashMap<String, Integer>> resultCount) {
 		HashMap<String, Integer> fieldMap = resultCount.get(fieldName);
 		if (fieldMap == null) {
@@ -449,8 +484,11 @@ public class DataRunner {
 						colorRGB = new short[] {64, 255, 64};
 					else if ((style & STYLE_COLOR_YELLOW) != 0)
 						colorRGB = new short[] {255, 255, 64};
-					else //if ((style & STYLE_COLOR_RED) != 0)
+					else if ((style & STYLE_COLOR_RED) != 0)
 						colorRGB = new short[] {255, 64, 64};
+					else //if ((style & STYLE_COLOR_GRAY) != 0)
+						colorRGB = new short[] {200, 200, 200};
+					
 					
 					if ((style & STYLE_COLOR_LIGHT) != 0)
 					{

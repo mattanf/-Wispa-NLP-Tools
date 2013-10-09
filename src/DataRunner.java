@@ -8,13 +8,11 @@ import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.hssf.util.HSSFColor;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
-import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFCellStyle;
 import org.apache.poi.xssf.usermodel.XSSFColor;
 
@@ -25,6 +23,10 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TreeMap;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 
@@ -32,7 +34,7 @@ import java.util.logging.Logger;
 
 import com.google.appengine.tools.development.testing.LocalDatastoreServiceTestConfig;
 import com.google.appengine.tools.development.testing.LocalServiceTestHelper;
-import com.google.gwt.thirdparty.javascript.jscomp.graph.GraphColoring.Color;
+import com.google.apphosting.api.ApiProxy;
 import com.pairapp.engine.parser.MessageParser;
 import com.pairapp.engine.parser.data.PostData;
 import com.pairapp.engine.parser.data.PostFieldData;
@@ -44,6 +46,45 @@ import com.pairapp.utilities.LogLineFormatter;
 
 public class DataRunner {
 
+	static class TestEnvironment implements ApiProxy.Environment {
+		  @Override
+		  public String getAppId() {
+		    return "Data runner test";
+		  }
+		  @Override
+		  public String getVersionId() {
+		    return "1.0";
+		  }
+		  @Override
+		  public String getRequestNamespace() {
+		    return "";
+		  }
+		  @Override
+		  public String getAuthDomain() {
+		    throw new UnsupportedOperationException();
+		  }
+		  @Override
+		  public boolean isLoggedIn() {
+		    throw new UnsupportedOperationException();
+		  }
+		  @Override
+		  public String getEmail() {
+		    throw new UnsupportedOperationException();
+		  }
+		  @Override
+		  public boolean isAdmin() {
+		    throw new UnsupportedOperationException();
+		  }
+		  @Override
+		  public Map<String, Object> getAttributes() {
+		    return new HashMap<String, Object>();
+		  }
+		@Override
+		public long getRemainingMillis() {
+			return 111110;
+		}
+		}
+	
 	final static int STYLE_CENTER = 1 << 0;
 	final static int STYLE_BORDER_RIGHT = 1 << 1;
 	final static int STYLE_BORDER_LEFT = 1 << 2;
@@ -61,6 +102,7 @@ public class DataRunner {
 	private final static int MAX_HEADERS = 100;
 
 	private static PostData basePostData;
+	static ApiProxy.Environment testEnvironment = new TestEnvironment();
 	private static final LocalServiceTestHelper datastoreHelper = new LocalServiceTestHelper(
 			new LocalDatastoreServiceTestConfig());
 
@@ -70,6 +112,36 @@ public class DataRunner {
 	private static HashMap<Integer, CellStyle> cellStyles;
 	private static int usedColorIndexRunner = 0;
 
+	static class ParseThreadData
+	{
+		private int row;
+		private PostData inpData;
+		private PostData outData;
+		
+		public ParseThreadData(int row, PostData inpData, PostData outData) {
+			this.row = row;
+			this.inpData = inpData;
+			this.outData = outData;
+				
+		}
+		public int getRow() {
+			return row;
+		}
+		public PostData getInput() {
+			return inpData;
+		}
+		public PostData getOutput() {
+			return outData;
+		}
+	}
+	
+	static final int NUMBER_OF_THREADS = Runtime.getRuntime().availableProcessors();
+	static ArrayBlockingQueue<ParseThreadData> threadInputQueue = new ArrayBlockingQueue<>(NUMBER_OF_THREADS + 1);
+	static ArrayBlockingQueue<ParseThreadData> threadOutputQueue = new ArrayBlockingQueue<>((NUMBER_OF_THREADS + 1) * 2);
+	static ThreadLocal<MessageParser> threadMessageParser = new ThreadLocal<MessageParser>();
+	static ExecutorService executorService = Executors.newFixedThreadPool(NUMBER_OF_THREADS);
+	static boolean workThreaded = true;
+	
 	// private static int endParseRow = -1;
 	/**
 	 * @param args
@@ -127,6 +199,8 @@ public class DataRunner {
 				cellStyles = new HashMap<>();
 				System.out.println("Started parse process");
 				datastoreHelper.setUp();
+				//ApiProxy.setEnvironmentForCurrentThread(testEnvironment);
+
 				analyzeFile(sourceFile, targetFile);
 				datastoreHelper.tearDown();
 				System.out.println("Ended parse process");
@@ -221,7 +295,7 @@ public class DataRunner {
 							}
 
 							if (stage == 0)
-								parseRowMessage(wb, headerRowNum, readRowNum, metaDataHeaders, outputHeaders, parser);
+								parseRowMessage(wb, headerRowNum, readRowNum, metaDataHeaders, outputHeaders, parser, isEndRow(wb, 0, readRowNum + 1));
 							else
 								compareRowRecord(wb, readRowNum, metaDataHeaders, outputHeaders, resultCount);
 
@@ -546,9 +620,10 @@ public class DataRunner {
 	 * @param parser
 	 * @return
 	 * @throws IOException
+	 * @throws  
 	 */
 	private static void parseRowMessage(Workbook wb, int headerRowNum, int readRowNum,
-			HashMap<String, Integer> metaDataHeaders, HashMap<String, Integer> outputHeaders, MessageParser parser)
+			HashMap<String, Integer> metaDataHeaders, HashMap<String, Integer> outputHeaders, MessageParser parser, boolean isLast)
 			throws IOException {
 		String messageStr = getCellString(wb, 0, readRowNum, 0);
 		if (!messageStr.isEmpty()) {
@@ -556,18 +631,71 @@ public class DataRunner {
 			PostData inputData = generateInitialePostData(wb, readRowNum, metaDataHeaders);
 
 			inputData.setOriginalMessageText(messageStr);
-			PostData outData = parser.parseMessage(inputData);
+			if (workThreaded)
+			{
+				try {
+					threadInputQueue.put(new ParseThreadData(readRowNum,inputData, null));
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+				executorService.execute(new Runnable() {
+					@Override
+					public void run() {
+						DataRunner.parseMessageThreaded();
+						
+					}
+				});
+			}
+			else 
+			{
+				PostData outData = parser.parseMessage(inputData);
+				threadInputQueue.add(new ParseThreadData(readRowNum,inputData, outData));
+			}
+		}
 
-			gatherColumnsFromOutputData(outputHeaders, inputData, outData, wb, headerRowNum, metaDataHeaders.size() + 2);
+		if (isLast)
+		{
+			executorService.shutdown();
+			try {
+				executorService.awaitTermination(1, TimeUnit.MINUTES);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		while (threadOutputQueue.isEmpty() == false)
+		{
+			ParseThreadData data = threadOutputQueue.poll();
+			
+			gatherColumnsFromOutputData(outputHeaders, data.getInput(), data.getOutput(), wb, headerRowNum, metaDataHeaders.size() + 2);
 
 			// Write the data
 			Iterator<Entry<String, Integer>> headerIt = outputHeaders.entrySet().iterator();
 			while (headerIt.hasNext()) {
 				Entry<String, Integer> next = headerIt.next();
 				String fieldName = next.getKey();
-				String value = getFieldSafe(outData, fieldName);
-				getCell(wb, 0, readRowNum, next.getValue(), true).setCellValue(value);
+				String value = getFieldSafe(data.getOutput(), fieldName);
+				getCell(wb, 0, data.getRow(), next.getValue(), true).setCellValue(value);
 			}
+		}
+	}
+
+	protected static void parseMessageThreaded() {
+		MessageParser parser = threadMessageParser.get();
+		if (parser == null)
+		{
+			ApiProxy.setEnvironmentForCurrentThread(testEnvironment);
+
+			parser = new MessageParser();
+			parser.init(false);
+			threadMessageParser.set(parser);
+		}
+		ParseThreadData poll = threadInputQueue.poll();
+		PostData outData = parser.parseMessage(poll.getInput());
+		try {
+			threadOutputQueue.put(new ParseThreadData(poll.getRow(), poll.getInput(), outData));
+		} catch (InterruptedException e) {
+			e.printStackTrace();
 		}
 	}
 

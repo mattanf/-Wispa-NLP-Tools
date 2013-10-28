@@ -1,4 +1,4 @@
-package googleQuerier;
+package israelDataGoogleQuerier;
 
 
 public class CountryRegionManager {

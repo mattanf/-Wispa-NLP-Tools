@@ -1,9 +1,10 @@
-package googleQuerier;
+package israelDataGoogleQuerier;
+
+import israelDataGoogleQuerier.GeocodeDataManager.QueryData;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import googleQuerier.GeocodeDataManager.QueryData;
 
 import com.google.code.geocoder.model.GeocoderResult;
 import com.pairapp.engine.parser.location.NamedLocation;

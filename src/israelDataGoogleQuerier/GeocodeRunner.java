@@ -1,6 +1,7 @@
-package googleQuerier;
+package israelDataGoogleQuerier;
 
-import googleQuerier.GeocodeDataManager.QueryData;
+
+import israelDataGoogleQuerier.GeocodeDataManager.QueryData;
 
 import java.io.File;
 import java.io.IOException;
@@ -10,7 +11,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.Workbook;
 
 import com.google.code.geocoder.model.GeocoderResult;
 import com.google.code.geocoder.model.LatLng;
@@ -27,7 +28,7 @@ public class GeocodeRunner {
 	private static final String DEFAULT_COUNTRY_NAME = "ישראל";
 	private static final int MIN_STREET_COUNT_FOR_INCLUDE = 15;
 	private static ArrayList<LocationEntry> cityByDistance = null;
-	private static XSSFWorkbook streetWB;
+	private static Workbook streetWB;
 	private static String workingDir;
 	private static HashMap<String, ArrayList<NamedLocation>> manualLocations = null;
 	
@@ -83,7 +84,7 @@ public class GeocodeRunner {
 	}
 
 	private static void mergeFromAdditionalFile(String fileToMergeFrom) {
-		XSSFWorkbook mergeWB = XLSUtil.openXLS(fileToMergeFrom);
+		Workbook mergeWB = XLSUtil.openXLS(fileToMergeFrom);
 		int sheetNum = XLSUtil.getSheetNumber(mergeWB, "Locations");
 		if (("Latitude".equals(XLSUtil.getCellString(mergeWB, sheetNum, 0, 2))) &&
 				("Longitude".equals(XLSUtil.getCellString(mergeWB, sheetNum, 0, 3))))
@@ -274,7 +275,7 @@ public class GeocodeRunner {
 		final int LANG_COL_EXCLUDED = 0;
 		final int LANG_COL_ISREGEX = 1;
 		
-		XSSFWorkbook langWB = XLSUtil.openXLS(languageExcel);
+		Workbook langWB = XLSUtil.openXLS(languageExcel);
 		int misspellsSheet = XLSUtil.getSheetNumber(langWB, "Misspells");
 		int excludedSheet = XLSUtil.getSheetNumber(langWB, "Excluded Names");
 		if ((misspellsSheet != -1) || (excludedSheet != -1))

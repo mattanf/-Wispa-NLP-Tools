@@ -1,4 +1,4 @@
-package googleQuerier;
+package israelDataGoogleQuerier;
 
 import java.io.File;
 import java.io.PrintStream;

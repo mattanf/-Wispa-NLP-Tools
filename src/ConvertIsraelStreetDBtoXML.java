@@ -8,10 +8,10 @@ import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 import org.apache.poi.openxml4j.opc.OPCPackage;
-import org.apache.poi.xssf.usermodel.XSSFCell;
-import org.apache.poi.xssf.usermodel.XSSFRow;
-import org.apache.poi.xssf.usermodel.XSSFSheet;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
 
 import utility.XLSUtil;
 
@@ -36,7 +36,7 @@ public class ConvertIsraelStreetDBtoXML {
 	 */
 	public static void main(String[] args) throws IOException {
 
-		XSSFWorkbook wb = XLSUtil.openXLS("C:\\Public\\Train Data\\rehovot.xlsx");
+		Workbook wb = XLSUtil.openXLS("C:\\Public\\Train Data\\rehovot.xlsx");
 
 		countryOutput = new FileWriter(outputDir + "LocationData-1.xml");
 		defaultCityOutput = new FileWriter(outputDir + "LocationData-1-X.xml");

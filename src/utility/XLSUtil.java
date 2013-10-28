@@ -1,38 +1,50 @@
 package utility;
 
+
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
-import org.apache.poi.openxml4j.opc.OPCPackage;
-import org.apache.poi.xssf.usermodel.XSSFCell;
-import org.apache.poi.xssf.usermodel.XSSFRow;
-import org.apache.poi.xssf.usermodel.XSSFSheet;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Map.Entry;
 
 public class XLSUtil {
 
+	public static Workbook openXLS(String source) {
+		return openXLS(new File(source));
+	}
 
-	public static XSSFWorkbook openXLS(String source) {
+	public static Workbook openXLS(File source) {
 		try {
-			OPCPackage pkg = OPCPackage.open(new String(source));
-			return new XSSFWorkbook(pkg);
+			Workbook exWorkBook = WorkbookFactory.create(new FileInputStream(source));
+			return exWorkBook;
 		} catch (Exception e) {
 			return null;
 		}
-
 	}
 
-	public static boolean saveXLS(XSSFWorkbook wb, String fileName) {
+	
+	public static boolean saveXLS(Workbook wb, String fileName) {
+		return saveXLS(wb, new File(fileName));
+	}
+		
+	public static boolean saveXLS(Workbook wb, File fileName) {
 		try {
-			FileOutputStream fileOut = new FileOutputStream(fileName + ".tmp");
+			FileOutputStream fileOut = new FileOutputStream(fileName.getPath() + ".tmp");
 			//write this workbook to an Outputstream.
 			wb.write(fileOut);
 			fileOut.flush();
 			fileOut.close();
-			wb.getPackage().close();
-			new File(fileName).delete();
-			new File(fileName + ".tmp").renameTo(new File(fileName));
+			fileName.delete();
+			new File(fileName.getPath() + ".tmp").renameTo(fileName);
 			
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -41,39 +53,39 @@ public class XLSUtil {
 		return true;
 	}
 
-	public static int getSheetNumber(XSSFWorkbook source, String name) 
+	public static int getSheetNumber(Workbook source, String name) 
 	{
 		return source != null ? source.getSheetIndex(name) : -1;
 	}
 	
-	public static String getCellString(XSSFWorkbook source, int rowNum, int columnNum) 
+	public static String getCellString(Workbook source, int rowNum, int columnNum) 
 	{
 		return getCellString(source, 0, rowNum, columnNum);
 	}
 
-	public static String getCellString(XSSFWorkbook source, int sheetNum, int rowNum, int columnNum)
+	public static String getCellString(Workbook source, int sheetNum, int rowNum, int columnNum)
 	{
-		XSSFCell cell = getCell(source, sheetNum, rowNum, columnNum);
+		Cell cell = getCell(source, sheetNum, rowNum, columnNum);
 		return getCellValueAsString(cell);
 	}
 
-	public static String getCellValueAsString(XSSFCell cell) {
+	public static String getCellValueAsString(Cell cell) {
 		if (cell != null) {
 			int resType = cell.getCellType();
-			if (resType == XSSFCell.CELL_TYPE_FORMULA)
+			if (resType == Cell.CELL_TYPE_FORMULA)
 				resType = cell.getCachedFormulaResultType();
 			switch (resType) {
-			case XSSFCell.CELL_TYPE_NUMERIC:
+			case Cell.CELL_TYPE_NUMERIC:
 				double val = cell.getNumericCellValue();
 				if (val - Math.floor(val) == 0)
 					return Long.toString((int) val);
 				else
 					return Double.toString(val);
 
-			case XSSFCell.CELL_TYPE_STRING:
+			case Cell.CELL_TYPE_STRING:
 				return cell.getStringCellValue().trim();
 				// case Cell.CELL_TYPE_FORMULA: return cell.getCellFormula();
-			case XSSFCell.CELL_TYPE_BOOLEAN:
+			case Cell.CELL_TYPE_BOOLEAN:
 				return Boolean.toString(cell.getBooleanCellValue());
 			default:
 				break;
@@ -82,43 +94,44 @@ public class XLSUtil {
 		return "";
 	}
 
-	public static int getRowWidth(XSSFWorkbook wb, int rowNum) {
-		XSSFSheet sheet = wb.getSheetAt(0);
+	public static int getRowWidth(Workbook wb, int rowNum) {
+		Sheet sheet = wb.getSheetAt(0);
 		if (sheet != null) {
-			XSSFRow row = sheet.getRow(rowNum);
+			Row row = sheet.getRow(rowNum);
 			if (row != null)
 				return row.getLastCellNum();
 		}
 		return 0;
 	}
 
-	public static boolean isEndRow(XSSFWorkbook wb, int rowNum) {
+	public static boolean isEndRow(Workbook wb, int rowNum) {
 		return isEndRow(wb, 0, rowNum);
 	}
-	public static boolean isEndRow(XSSFWorkbook wb, int sheetNum, int rowNum) {
-		XSSFSheet sheet = wb.getSheetAt(sheetNum);
+	public static boolean isEndRow(Workbook wb, int sheetNum, int rowNum) {
+		Sheet sheet = wb.getSheetAt(sheetNum);
 		return (sheet == null) || (rowNum > sheet.getLastRowNum());
 	}
 
-	public static XSSFCell getCell(XSSFWorkbook source, int rowNum, int columnNum)
+	public static Cell getCell(Workbook source, int rowNum, int columnNum)
 	{
 		return getCell(source, 0, rowNum, columnNum);
 	}
 	
-	public static XSSFCell getCell(XSSFWorkbook source, int sheetNumber, int rowNum, int columnNum)
+	public static Cell getCell(Workbook source, int sheetNumber, int rowNum, int columnNum)
 	{
 		return getCell(source, sheetNumber, rowNum, columnNum, false);
 	}
-	public static XSSFCell getCell(XSSFWorkbook source, int sheetNumber, int rowNum, int columnNum, boolean createIfNeeded) {
+
+	public static Cell getCell(Workbook source, int sheetNumber, int rowNum, int columnNum, boolean createIfNeeded) {
 		if (sheetNumber >= 0)
 		{
-			XSSFSheet sheet = source.getSheetAt(sheetNumber);
+			Sheet sheet = source.getSheetAt(sheetNumber);
 			if (sheet != null) {
-				XSSFRow row = sheet.getRow(rowNum);
+				Row row = sheet.getRow(rowNum);
 				if ((row == null) && (createIfNeeded))
 					row = sheet.createRow(rowNum);
 				if (row != null) {
-					XSSFCell cell =  row.getCell(columnNum);
+					Cell cell =  row.getCell(columnNum);
 					if ((cell == null) && (createIfNeeded))
 						cell = row.createCell(columnNum);
 					return cell;
@@ -129,17 +142,61 @@ public class XLSUtil {
 		return null;
 	}
 
-	public static boolean setCellString(XSSFWorkbook source, int rowNum, int columnNum, String string) {
+	public static boolean setCellString(Workbook source, int rowNum, int columnNum, String string) {
 		return setCellString(source, 0, rowNum, columnNum, string);
 	}
 	
-	public static boolean setCellString(XSSFWorkbook source, int sheetNum, int rowNum, int columnNum, String string) {
-		XSSFCell cell = getCell(source, sheetNum, rowNum, columnNum, true);
+	public static boolean setCellString(Workbook source, int sheetNum, int rowNum, int columnNum, String string) {
+		Cell cell = getCell(source, sheetNum, rowNum, columnNum, true);
 		if (cell != null)
 		{
 			cell.setCellValue(string);
 		}
 		return cell != null;
 	}
+
+	//Get all the values in a row and enters them to a map with their column number
+	public static Map<String, Integer> getHeader(Workbook wb, int sheetNum, int rowNum) {
+		HashMap<String, Integer> map = new HashMap<>();
+		
+		Sheet sheet = wb.getSheetAt(sheetNum);
+		if (sheet != null) {
+			Row row = sheet.getRow(rowNum);
+			if (row != null) {
+				//scan all available columns in the row
+				for(int columnNum = row.getFirstCellNum() ; columnNum <= row.getLastCellNum() ; ++columnNum) {
+					Cell cell = getCell(wb, sheetNum, rowNum, columnNum);
+					String headerValue = getCellValueAsString(cell);
+					if (headerValue.isEmpty() == false)
+						map.put(headerValue, columnNum);
+				}
+			}
+		}
+		return map;	
+	}
+
+	public static void updateHeader(Workbook wb, int sheetNum, int rowNum, Map<String, Integer> headerValues) {
+		for(Entry<String, Integer> entry : headerValues.entrySet())
+		{
+			int columnNum = entry.getValue();
+			String name = entry.getKey();
+			if (!XLSUtil.getCellString(wb, sheetNum, rowNum, columnNum).equals(name))
+				XLSUtil.setCellString(wb, sheetNum, rowNum, columnNum, name);
+		}
+		
+	}
+	
+	public static int getOrCreateSheet(Workbook wb, String sheetName, int defaultOrder) {
+		Sheet sh = wb.getSheet(sheetName);
+		if (sh == null)
+		{
+			wb.createSheet(sheetName);
+			if (defaultOrder != -1)
+				wb.setSheetOrder(sheetName, defaultOrder);
+		}
+		return wb.getSheetIndex(sheetName);
+	}
+
+	
 
 }

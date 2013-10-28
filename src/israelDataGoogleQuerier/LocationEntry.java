@@ -1,7 +1,8 @@
-package googleQuerier;
+package israelDataGoogleQuerier;
 
 import java.io.Serializable;
 
+import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import utility.XLSUtil;
@@ -47,10 +48,10 @@ public class LocationEntry implements Comparable<LocationEntry>, Serializable {
 		}
 	}
 
-	public LocationEntry(XSSFWorkbook wb, int readRow) {
-		this((XLSUtil.getCellString(wb, readRow, ROW_CITY_ID)), (XLSUtil.getCellString(wb, readRow, ROW_CITY_NAME)),
-				(XLSUtil.getCellString(wb, readRow, ROW_AREA_ID)), (XLSUtil.getCellString(wb, readRow, ROW_AREA_NAME)),
-				(XLSUtil.getCellString(wb, readRow, SUGGESTED_CITY_NAME)), (XLSUtil.getCellString(wb, readRow,
+	public LocationEntry(Workbook streetWB, int readRow) {
+		this((XLSUtil.getCellString(streetWB, readRow, ROW_CITY_ID)), (XLSUtil.getCellString(streetWB, readRow, ROW_CITY_NAME)),
+				(XLSUtil.getCellString(streetWB, readRow, ROW_AREA_ID)), (XLSUtil.getCellString(streetWB, readRow, ROW_AREA_NAME)),
+				(XLSUtil.getCellString(streetWB, readRow, SUGGESTED_CITY_NAME)), (XLSUtil.getCellString(streetWB, readRow,
 						SUGGESTED_AREA_NAME)));
 
 	}

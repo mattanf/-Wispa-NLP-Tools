@@ -12,7 +12,9 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
@@ -154,6 +156,32 @@ public class XLSUtil {
 		}
 		return cell != null;
 	}
+	
+	public static boolean setCellValue(Workbook source, int sheetNum, int rowNum, int columnNum, boolean value) {
+		Cell cell = getCell(source, sheetNum, rowNum, columnNum, true);
+		if (cell != null)
+		{
+			cell.setCellValue(value);
+		}
+		return cell != null;
+	}
+	public static boolean setCellValue(Workbook source, int sheetNum, int rowNum, int columnNum, int value) {
+		Cell cell = getCell(source, sheetNum, rowNum, columnNum, true);
+		if (cell != null)
+		{
+			cell.setCellValue(value);
+		}
+		return cell != null;
+	}
+	
+	public static boolean setCellValue(Workbook source, int sheetNum, int rowNum, int columnNum, double value) {
+		Cell cell = getCell(source, sheetNum, rowNum, columnNum, true);
+		if (cell != null)
+		{
+			cell.setCellValue(value);
+		}
+		return cell != null;
+	}
 
 	//Get all the values in a row and enters them to a map with their column number
 	public static Map<String, Integer> getHeader(Workbook wb, int sheetNum, int rowNum) {
@@ -197,6 +225,21 @@ public class XLSUtil {
 		return wb.getSheetIndex(sheetName);
 	}
 
-	
-
+	public static void orderRows(Workbook wb, int sheetNum, int orderFrom, List<Integer> rowsNumbers)
+	{
+		Sheet sheet = wb.getSheetAt(sheetNum);
+		if (sheet != null) {
+			ArrayList<Row> rows = new ArrayList<>();
+			for(Integer rowNum : rowsNumbers)
+			{
+				rows.add(sheet.getRow(rowNum));
+			}
+			
+			for(Row row : rows)
+			{
+				if (row != null)
+					row.setRowNum(orderFrom++);
+			}			
+		}
+	}
 }

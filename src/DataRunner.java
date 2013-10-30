@@ -17,6 +17,7 @@ import org.apache.poi.xssf.usermodel.XSSFCellStyle;
 import org.apache.poi.xssf.usermodel.XSSFColor;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -49,7 +50,7 @@ public class DataRunner {
 	static class TestEnvironment implements ApiProxy.Environment {
 		  @Override
 		  public String getAppId() {
-		    return "Data runner test";
+		    return "test";
 		  }
 		  @Override
 		  public String getVersionId() {
@@ -102,6 +103,7 @@ public class DataRunner {
 	private final static int MAX_HEADERS = 100;
 
 	private static PostData basePostData;
+	
 	static ApiProxy.Environment testEnvironment = new TestEnvironment();
 	private static final LocalServiceTestHelper datastoreHelper = new LocalServiceTestHelper(
 			new LocalDatastoreServiceTestConfig());
@@ -148,7 +150,8 @@ public class DataRunner {
 	 * @throws Exception
 	 */
 	public static void main(String[] args) throws Exception {
-
+		
+		
 		// This class does in a round about way initializes the log. we need to call it before making changes to the
 		// loging mechnism
 		// GeocodeQuerier.instance();
@@ -199,7 +202,7 @@ public class DataRunner {
 				cellStyles = new HashMap<>();
 				System.out.println("Started parse process");
 				datastoreHelper.setUp();
-				//ApiProxy.setEnvironmentForCurrentThread(testEnvironment);
+				ApiProxy.setEnvironmentForCurrentThread(testEnvironment);
 
 				analyzeFile(sourceFile, targetFile);
 				datastoreHelper.tearDown();
@@ -295,7 +298,7 @@ public class DataRunner {
 							}
 
 							if (stage == 0)
-								parseRowMessage(wb, headerRowNum, readRowNum, metaDataHeaders, outputHeaders, parser, isEndRow(wb, 0, readRowNum + 1));
+								parseRowMessage(wb, headerRowNum, readRowNum, metaDataHeaders, outputHeaders, parser, isEndRow(wb, 0, readRowNum + 1) || (readRowNum == endParseRow));
 							else
 								compareRowRecord(wb, readRowNum, metaDataHeaders, outputHeaders, resultCount);
 
@@ -326,12 +329,16 @@ public class DataRunner {
 					metaDataHeaders.get("PostPurpose")) : "Unknown";
 			boolean isOffer = purposeString.equalsIgnoreCase("Offer");
 			boolean isSeek = purposeString.equalsIgnoreCase("Seek");
+			boolean isSwap = purposeString.equalsIgnoreCase("Swap");
+			
 			
 			Iterator<Entry<String, Integer>> outputHeaderIt = outputHeaders.entrySet().iterator();
 			while (outputHeaderIt.hasNext()) {
 				Entry<String, Integer> outputHeader = outputHeaderIt.next();
 				String fieldName = outputHeader.getKey();
 				Integer origHeaderPos = metaDataHeaders.get(fieldName);
+				boolean isValidAgnosticField = isValidAgnosticFieldName(fieldName);
+				
 				if (origHeaderPos != null) {
 					
 					// Compare the values
@@ -367,7 +374,7 @@ public class DataRunner {
 					}
 					if (wrongness != 3)
 					{
-						addComparisonData(fieldName, isValid, isOffer, isSeek, wrongness == 2, wrongness == 1, wrongness == 0,
+						addComparisonData(fieldName, isValid | isValidAgnosticField, isOffer, isSeek, isSwap, wrongness == 2, wrongness == 1, wrongness == 0,
 								resultCount);
 						setCellStyle(wb, 0, readRowNum, outputHeader.getValue(), (wrongness >= 2 ? STYLE_COLOR_RED :
 								(wrongness >= 1 ? STYLE_COLOR_YELLOW : STYLE_COLOR_GREEN)) | (isValid ? 0 : STYLE_COLOR_LIGHT));
@@ -401,7 +408,7 @@ public class DataRunner {
 		return cellString.trim();
 	}
 
-	private static void addComparisonData(String fieldName, boolean isValid, boolean isOffer, boolean isSeek,
+	private static void addComparisonData(String fieldName, boolean isValid, boolean isOffer, boolean isSeek, boolean isSwap,
 			boolean isFalsePositive, boolean isFalseNegative, boolean isSame,
 			TreeMap<String, HashMap<String, Integer>> resultCount) {
 		HashMap<String, Integer> fieldMap = resultCount.get(fieldName);
@@ -411,12 +418,16 @@ public class DataRunner {
 		}
 		String baseKey = isFalseNegative ? "FN" : (isFalsePositive ? "FP" : "EQ");
 		incrementFieldInMap(fieldMap, baseKey);
+		boolean isValidAgnosticField = isValidAgnosticFieldName(fieldName);
+		
 		if (isValid == true) {
-			incrementFieldInMap(fieldMap, "ValidMessage-" + baseKey);
+			incrementFieldInMap(fieldMap, "Valid-" + baseKey);
 			if (isSeek == true)
-				incrementFieldInMap(fieldMap, "Seek-ValidMessage-" + baseKey);
+				incrementFieldInMap(fieldMap, "Seek-Valid-" + baseKey);
 			if (isOffer == true)
-				incrementFieldInMap(fieldMap, "Offer-ValidMessage-" + baseKey);
+				incrementFieldInMap(fieldMap, "Offer-Valid-" + baseKey);
+			if (isSwap == true)
+				incrementFieldInMap(fieldMap, "isSwap-Valid-" + baseKey);
 		}
 	}
 
@@ -482,19 +493,19 @@ public class DataRunner {
 			Integer equal = nullToZero(compData.getValue().get("EQ"));
 			Integer total = falseNegative + falsePositive + equal;
 
-			Integer falseNegativeValidMessage = nullToZero(compData.getValue().get("ValidMessage-FN"));
-			Integer falsePositiveValidMessage = nullToZero(compData.getValue().get("ValidMessage-FP"));
-			Integer equalValidMessage = nullToZero(compData.getValue().get("ValidMessage-EQ"));
+			Integer falseNegativeValidMessage = nullToZero(compData.getValue().get("Valid-FN"));
+			Integer falsePositiveValidMessage = nullToZero(compData.getValue().get("Valid-FP"));
+			Integer equalValidMessage = nullToZero(compData.getValue().get("Valid-EQ"));
 			Integer totalValidMessage = falseNegativeValidMessage + falsePositiveValidMessage + equalValidMessage;
 
-			Integer falseNegativeValidMessageSeek = nullToZero(compData.getValue().get("Seek-ValidMessage-FN"));
-			Integer falsePositiveValidMessageSeek = nullToZero(compData.getValue().get("Seek-ValidMessage-FP"));
-			Integer equalValidMessageSeek = nullToZero(compData.getValue().get("Seek-ValidMessage-EQ"));
+			Integer falseNegativeValidMessageSeek = nullToZero(compData.getValue().get("Seek-Valid-FN"));
+			Integer falsePositiveValidMessageSeek = nullToZero(compData.getValue().get("Seek-Valid-FP"));
+			Integer equalValidMessageSeek = nullToZero(compData.getValue().get("Seek-Valid-EQ"));
 			Integer totalValidMessageSeek = falseNegativeValidMessageSeek + falsePositiveValidMessageSeek + equalValidMessageSeek;
 
-			Integer falseNegativeValidMessageOffer = nullToZero(compData.getValue().get("Offer-ValidMessage-FN"));
-			Integer falsePositiveValidMessageOffer = nullToZero(compData.getValue().get("Offer-ValidMessage-FP"));
-			Integer equalValidMessageOffer = nullToZero(compData.getValue().get("Offer-ValidMessage-EQ"));
+			Integer falseNegativeValidMessageOffer = nullToZero(compData.getValue().get("Offer-Valid-FN"));
+			Integer falsePositiveValidMessageOffer = nullToZero(compData.getValue().get("Offer-Valid-FP"));
+			Integer equalValidMessageOffer = nullToZero(compData.getValue().get("Offer-Valid-EQ"));
 			Integer totalValidMessageOffer = falseNegativeValidMessageOffer + falsePositiveValidMessageOffer + equalValidMessageOffer;
 
 			columnIndex = -1;
@@ -503,12 +514,17 @@ public class DataRunner {
 			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(falsePositive + "/" + total);
 			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(equal + "/" + total);
 
-			getCell(wb, sheetNum, writeRow, ++columnIndex, true)
-					.setCellFormula(falseNegativeValidMessage + "/" + totalValidMessage);
-			getCell(wb, sheetNum, writeRow, ++columnIndex, true)
-					.setCellFormula(falsePositiveValidMessage + "/" + totalValidMessage);
-			getCell(wb, sheetNum, writeRow, ++columnIndex, true)
-					.setCellFormula(equalValidMessage + "/" + totalValidMessage);
+			boolean isValidAgnosticField = isValidAgnosticFieldName(fieldName);
+			if (isValidAgnosticField == false)
+			{
+				getCell(wb, sheetNum, writeRow, ++columnIndex, true)
+						.setCellFormula(falseNegativeValidMessage + "/" + totalValidMessage);
+				getCell(wb, sheetNum, writeRow, ++columnIndex, true)
+						.setCellFormula(falsePositiveValidMessage + "/" + totalValidMessage);
+				getCell(wb, sheetNum, writeRow, ++columnIndex, true)
+						.setCellFormula(equalValidMessage + "/" + totalValidMessage);
+			}
+			else columnIndex = columnIndex + 3;
 			
 			getCell(wb, sheetNum, writeRow, ++columnIndex, true).setCellFormula(
 					falseNegativeValidMessageSeek + "/" + totalValidMessageSeek);
@@ -530,6 +546,15 @@ public class DataRunner {
 			++writeRow;
 		}
 
+	}
+
+	/**
+	 * @param fieldName
+	 * @return
+	 */
+	private static boolean isValidAgnosticFieldName(String fieldName) {
+		boolean isValidAgnosticField = (fieldName.equalsIgnoreCase("PostIsValid") || fieldName.equalsIgnoreCase("PostIsSpam"));
+		return isValidAgnosticField;
 	}
 
 	private static void setCellStyle(Workbook wb, int sheetNum, int rowNum, int columnNum, int style) {
@@ -629,8 +654,28 @@ public class DataRunner {
 		if (!messageStr.isEmpty()) {
 
 			PostData inputData = generateInitialePostData(wb, readRowNum, metaDataHeaders);
-
 			inputData.setOriginalMessageText(messageStr);
+			
+			/*inputData = new PostData();
+			inputData.addField(PostFieldType.PostPublisherId, "582793141782660");
+			inputData.addField(PostFieldType.ForumCategory, "RealEstate");
+			inputData.addField(PostFieldType.ForumLanguage, "he");
+			inputData.addField(PostFieldType.ForumCurrency, "NIS");
+			inputData.addField(PostFieldType.ForumContractType, "Rent");
+			inputData.addField(PostFieldType.ForumLocationCountry, "IL");
+			inputData.addField(PostFieldType.ForumLocationCityCode, "3000");
+			inputData.addField(PostFieldType.BillboardId, VariantEnum.generateInstance(VariantTypeEnums.Billboard.Facebook));
+			inputData.addField(PostFieldType.PostTimeCreated, VariantDate.generateInstance(1, 1, 2000));
+			
+			inputData.setOriginalMessageText("לכל תושבי נחלאות / דירות קטנות\n" +
+"שולחן מאיקאה במצב מעולה!!!    \n" +
+"יעיל , מתקפל ומאוד נוח לשימוש ואחסון \n" +
+"מחיר 500 ש״ח \n" +
+"מידות : \n" +
+"מצב סגור- 26 על 89 ס״מ \n" +
+"חצי פתוח- 89 על 85  ס״מ\n" +
+"פתוח - 89 על 144 ס״מ \n" +
+"איסוף מנחלאות\n");*/
 			if (workThreaded)
 			{
 				try {

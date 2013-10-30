@@ -162,7 +162,7 @@ public class GoogleGeocodeQuerier {
 	 * @return results
 	 */
 	private GeocodeResponse doGeocodeQuery(String locationName) {
-		sleepTimeBetweenQueries = Math.max(sleepTimeBetweenQueries - 0.01, 20);
+		sleepTimeBetweenQueries = Math.max(sleepTimeBetweenQueries - 0.01, 10);
 		if (sleepTimeBetweenQueries > 0) {
 			try {
 				Thread.sleep((long) sleepTimeBetweenQueries);

@@ -411,6 +411,7 @@ public class DataRunner {
 							if (origValue.equalsIgnoreCase("[Empty]"))
 								origValue = "";
 							
+							origValue = normNumeric(origValue);
 							boolean isFalseNegative = (origValue.isEmpty() == false) && (genValue.isEmpty() == true);
 							boolean isFalsePositive = !isFalseNegative && origValue.compareToIgnoreCase(genValue) != 0;
 							if (isBooleanColumn || (isBooleanString(origValue) && isBooleanString(genValue)))

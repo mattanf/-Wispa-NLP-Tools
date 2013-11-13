@@ -9,6 +9,7 @@ import org.w3c.dom.Element;
 
 import com.google.code.geocoder.model.GeocoderAddressComponent;
 import com.google.code.geocoder.model.GeocoderResult;
+import com.google.code.geocoder.model.LatLng;
 
 import utility.AddressComponent;
 import utility.GoogleGeocodeQuerier;
@@ -21,6 +22,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -31,6 +33,24 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 
 public class ExcelGeoQueryFiller {
+
+	enum MldEntryType {
+		Location,
+		General;
+		
+		static public MldEntryType toEnum(String value)
+		{
+			if (value != null)
+			{
+				for(MldEntryType type : MldEntryType.values())
+				{
+					if (type.name().equalsIgnoreCase(value)) 
+						return type;
+				}
+			}
+			return null;
+		}
+	}
 
 	final static String COLUMN_LOCATION = "Location";
 	final static String COLUMN_IS_PROCESSED = "Is Processed";
@@ -45,13 +65,22 @@ public class ExcelGeoQueryFiller {
 	final static String COLUMN_LONGITUDE = "Longitude";
 	final static String COLUMN_GOOGLE_TYPE_PREFIX = "GT ";
 	final static String COLUMN_ALTERNATIVE_NAME = "Alternative Names";
-	final static String COLUMN_GROUP = "Group";
+	final static String COLUMN_FLAGS = "Flags";
+	final static String COLUMN_COUNTRY_REGION = "CountryRegion";
 	
 	final static String COLUMN_XML_LEVEL = "Level";
 	final static String COLUMN_XML_NAME = "Name";
 	final static String COLUMN_XML_FROM = "From";
 	
-
+	final static String PROPERTY_FILENAME = "FileName";
+	final static String PROPERTY_DATA_TYPE = "DataType";
+	
+	final static String SHEET_REGION_BY_CLOSNESS = "RegionByClosness";
+	final static String PROPERTY_COLUMN_TO_ADD = "ColumnToAdd";
+	final static String PROPERTY_COLUMN_TO_COMPARE = "ColumnToCompare";
+	final static String COLUMN_CLOSE_BY_REGION = "CloseByRegion";
+	
+	
 	final static String FULL_GOOGLE_NAME = "Google name";
 
 	/**
@@ -80,33 +109,37 @@ public class ExcelGeoQueryFiller {
 		// Find the header row
 		Map<String, Integer> mainHeader = new HashMap<String, Integer>();
 		int mainHeaderRow = getHeaderRow(wb, mainSheet, mainHeader, COLUMN_LOCATION, COLUMN_IS_PROCESSED);
-		int mainRow = mainHeaderRow + 1;
 		
 		if (mainHeaderRow == -1) {
 			System.out.println("No header with rows \"" + COLUMN_LOCATION + "\" and \"" + COLUMN_IS_PROCESSED +
 					"\" found in main sheet.");
 		} else {
 			
+			MldEntryType dataType = MldEntryType.toEnum(getPreHeaderProperty(wb, mainSheet, mainHeaderRow, PROPERTY_DATA_TYPE));
+			if (dataType == null)
+				dataType = MldEntryType.General;
 			addColumnToHeader(mainHeader, COLUMN_ORIG_ROW);
 			addColumnToHeader(mainHeader, COLUMN_TYPE);
-			addColumnToHeader(mainHeader, COLUMN_LATITUDE);
-			addColumnToHeader(mainHeader, COLUMN_LONGITUDE);
 			addColumnToHeader(mainHeader, COLUMN_ALTERNATIVE_NAME);
-			addColumnToHeader(mainHeader, COLUMN_GROUP);
-
-			HashMap<String, Integer> calculatedLoc = getPreCalculatedLocations(wb, mainSheet, mainRow, mainHeader);
+			addColumnToHeader(mainHeader, COLUMN_FLAGS);
 			
-			boolean hasUpdated = updateGeoDataInExcel(wb, mainSheet, mainRow, mainHeader, mainHeaderRow, calculatedLoc);
-			// save the xls
+			HashMap<String, Integer> calculatedLoc = getPreCalculatedLocations(wb, mainSheet, mainHeaderRow, mainHeader);
+			
+			boolean hasUpdated = false;
+			if (dataType == MldEntryType.Location)
+			{
+				addColumnToHeader(mainHeader, COLUMN_LATITUDE);
+				addColumnToHeader(mainHeader, COLUMN_LONGITUDE);
+				hasUpdated = updateGeoDataInExcel(wb, mainSheet, mainHeader, mainHeaderRow, calculatedLoc);
+				hasUpdated |= updateClosestMajorCity(wb, mainSheet, mainHeader, mainHeaderRow);
+			}
+			
+			hasUpdated |= exportToXML(wb, dataType, mainSheet, mainHeader, mainHeaderRow, new File(inputFile.getPath() + ".xml"));
 			if (hasUpdated)
 				XLSUtil.saveXLS(wb, inputFile);
 			
-			
-			exportToXML(wb, mainSheet, mainRow, mainHeader, mainHeaderRow, inputFile.getPath() + ".xml");
-			XLSUtil.saveXLS(wb, inputFile);
 		}
 	}
-
 
 	/**
 	 * @param wb
@@ -117,7 +150,7 @@ public class ExcelGeoQueryFiller {
 	 * @param mainHeaderRow
 	 * @param calculatedLoc
 	 */
-	private static boolean updateGeoDataInExcel(Workbook wb, int mainSheet, int mainRow,
+	private static boolean updateGeoDataInExcel(Workbook wb, int mainSheet, 
 			Map<String, Integer> mainHeader, int mainHeaderRow, HashMap<String, Integer> calculatedLoc) {
 		boolean hasUpdated = false;
 		
@@ -142,6 +175,7 @@ public class ExcelGeoQueryFiller {
 		
 		boolean failedQuery = false;
 		//Scan all locations query them and output the results
+		int mainRow = mainHeaderRow + 1;
 		while (!XLSUtil.isEndRow(wb, mainSheet, mainRow) && failedQuery == false) {
 			String location = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_LOCATION));
 			String isProcessed = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_IS_PROCESSED));
@@ -187,10 +221,11 @@ public class ExcelGeoQueryFiller {
 		return hasUpdated;
 	}
 
-	private static HashMap<String, Integer> getPreCalculatedLocations(Workbook wb, int mainSheet, int mainRow,
+	private static HashMap<String, Integer> getPreCalculatedLocations(Workbook wb, int mainSheet, int mainHeaderRow,
 			Map<String, Integer> mainHeader) {
 		HashMap<String, Integer> precalced = new HashMap<String, Integer>();
 		
+		int mainRow = mainHeaderRow + 1;
 		//Scan all locations query them and output the results
 		while (!XLSUtil.isEndRow(wb, mainSheet, mainRow)) {
 			String location = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_LOCATION));
@@ -227,9 +262,9 @@ public class ExcelGeoQueryFiller {
 			setCellByHeader(wb, sheetNum, readRow, workHeader, COLUMN_FORMATTED_ADDRESS, mainResult.getFormattedAddress());
 			setCellByHeader(wb, sheetNum, readRow, workHeader, COLUMN_TYPE, typeString);
 			setCellByHeader(wb, sheetNum, readRow, workHeader, COLUMN_LATITUDE, mainResult.getGeometry().getLocation()
-					.getLat().toString());
+					.getLat().doubleValue());
 			setCellByHeader(wb, sheetNum, readRow, workHeader, COLUMN_LONGITUDE, mainResult.getGeometry().getLocation()
-					.getLng().toString());
+					.getLng().doubleValue());
 			for (GeocoderAddressComponent comp : mainResult.getAddressComponents()) {
 				for (String type : comp.getTypes()) {
 					setCellByHeader(wb, sheetNum, readRow, workHeader, COLUMN_GOOGLE_TYPE_PREFIX + type, comp.getLongName());
@@ -238,7 +273,124 @@ public class ExcelGeoQueryFiller {
 		}
 	}
 
-	
+	private static boolean updateClosestMajorCity(Workbook wb, int mainSheet, 
+			Map<String, Integer> mainHeader, int mainHeaderRow) {
+		boolean isChanged = false;
+		int citiesSheet = XLSUtil.getSheetNumber(wb, SHEET_REGION_BY_CLOSNESS);
+		if (citiesSheet == -1)
+			System.out.println("Sheet " + SHEET_REGION_BY_CLOSNESS + " not found.");
+		else
+		{
+			Map<String, Integer> citiesHeader = new HashMap<>();
+			Map<String, Map<String, LatLng>> mapPositionToLocation = new HashMap<>();
+			int cityRow = getHeaderRow(wb, citiesSheet, citiesHeader, COLUMN_LATITUDE, COLUMN_LONGITUDE);
+			String columnToAdd = getPreHeaderProperty(wb, citiesSheet, cityRow, PROPERTY_COLUMN_TO_ADD);
+			String columnToCompare = getPreHeaderProperty(wb, citiesSheet, cityRow, PROPERTY_COLUMN_TO_COMPARE);
+			if ((columnToCompare != null) && (columnToCompare.isEmpty()))
+				columnToCompare = null;
+			if ((columnToAdd != null) && (columnToAdd.isEmpty()))
+				columnToAdd = null;
+			
+			if (cityRow == -1)
+				System.out.println("Header of sheet " + SHEET_REGION_BY_CLOSNESS + " not found. Cannot perform closest region update.");
+			else if (columnToAdd == null)
+				System.out.println("ColumnToAdd not found in sheet " + SHEET_REGION_BY_CLOSNESS + ". Cannot perform closest region update.");
+			else if (citiesHeader.get(columnToAdd) == null)
+				System.out.println("ColumnToAdd " + columnToAdd + " not found in header of sheet " + SHEET_REGION_BY_CLOSNESS + ". Cannot perform closest region update.");
+			else if ((columnToCompare != null) && (citiesHeader.get(columnToCompare) == null))
+				System.out.println("ColumnToCompare " + columnToCompare + " not found in header of sheet " + SHEET_REGION_BY_CLOSNESS + ". Cannot perform closest region update.");
+			else if ((columnToCompare != null) && (mainHeader.get(columnToCompare) == null))
+				System.out.println("ColumnToCompare " + columnToCompare + " not found in header of main sheet. Cannot perform closest region update.");
+			else if (mainHeader.get(COLUMN_CLOSE_BY_REGION) == null)
+				System.out.println("Column " + COLUMN_CLOSE_BY_REGION + " not found in header of main sheet. Cannot perform closest region update.");
+			else
+			{
+				++cityRow;
+				while (!XLSUtil.isEndRow(wb, citiesSheet, cityRow))
+				{
+					try{
+						
+						String name = XLSUtil.getCellString(wb, citiesSheet, cityRow, citiesHeader.get(columnToAdd));
+						String compareValue = null;
+						if (columnToCompare != null)
+							compareValue = XLSUtil.getCellString(wb, citiesSheet, cityRow, citiesHeader.get(columnToCompare));
+						String latitude = XLSUtil.getCellString(wb, citiesSheet, cityRow, citiesHeader.get(COLUMN_LATITUDE));
+						String longitude = XLSUtil.getCellString(wb, citiesSheet, cityRow, citiesHeader.get(COLUMN_LONGITUDE));
+						if (name.isEmpty() == false)
+						{
+							if (!mapPositionToLocation.containsKey(compareValue))
+								mapPositionToLocation.put(compareValue, new HashMap<String, LatLng>());
+							mapPositionToLocation.get(compareValue).put(name, new LatLng(latitude, longitude));
+						}
+							
+					}
+					catch (Throwable e)
+					{
+						System.out.println("Unable to parse Major cities line " + Integer.toString(cityRow + 1));
+					}
+					++cityRow;
+				}
+				
+				if (mapPositionToLocation.isEmpty() == false)
+				{
+					Integer columnIndex = addColumnToHeader(mainHeader, COLUMN_CLOSE_BY_REGION);
+					
+					int mainRow = mainHeaderRow + 1;
+					while (!XLSUtil.isEndRow(wb, mainSheet, mainRow))
+					{
+						try {
+							String latitude = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_LATITUDE));
+							String longitude = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_LONGITUDE));
+							String compareValue = null;
+							if (!latitude.isEmpty() && !longitude.isEmpty())
+							{
+								if (columnToCompare != null)
+									compareValue = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(columnToCompare));
+								Map<String, LatLng> mapInCompared = mapPositionToLocation.get(compareValue);
+								String newValue = null;
+								if (mapInCompared != null)
+								{
+									LatLng location = new LatLng(latitude, longitude);
+									newValue = getClosestLocationName(location, mapInCompared);
+								}
+								String prevValue = XLSUtil.getCellString(wb, mainSheet, mainRow, columnIndex);
+								if (prevValue != newValue)
+								{
+									XLSUtil.setCellString(wb, mainSheet, mainRow, columnIndex, newValue);
+									isChanged = true;
+								}
+							}
+						}
+						catch(Throwable e)
+						{
+							System.out.println("Unable to save closest major city in line " + Integer.toString(mainRow + 1));
+						}
+						++mainRow;
+					}
+				}
+				
+			}
+		}
+		return isChanged;
+	}
+
+	private static String getClosestLocationName(LatLng location, Map<String, LatLng> mapPositionToLocation) {
+		double closestSqrDistance = Double.MAX_VALUE;
+		String closestLocationName = null;
+		for(Entry<String, LatLng> entry : mapPositionToLocation.entrySet())
+		{
+			double latDiff = entry.getValue().getLat().doubleValue() - location.getLat().doubleValue();
+			double lngDiff = entry.getValue().getLng().doubleValue() - location.getLng().doubleValue();
+			double entSqrDist = latDiff * latDiff + lngDiff * lngDiff;
+			if (entSqrDist < closestSqrDistance)
+			{
+				closestSqrDistance = entSqrDist;
+				closestLocationName = entry.getKey();
+			}
+		}
+		return closestLocationName;
+	}
+
 	private static void setCellByHeader(Workbook wb, int sheetNum, int rowNum, Map<String, Integer> workHeader,
 			String columnName, String value) {
 		Integer columnIndex = addColumnToHeader(workHeader, columnName);
@@ -246,12 +398,17 @@ public class ExcelGeoQueryFiller {
 	}
 	
 	private static void setCellByHeader(Workbook wb, int sheetNum, int rowNum, Map<String, Integer> workHeader,
-			String columnName, boolean value) {
+			String columnName, Boolean value) {
 		Integer columnIndex = addColumnToHeader(workHeader, columnName);
 		XLSUtil.setCellValue(wb, sheetNum, rowNum, columnIndex, value);
 	}
 	private static void setCellByHeader(Workbook wb, int sheetNum, int rowNum, Map<String, Integer> workHeader,
-			String columnName, int value) {
+			String columnName, Integer value) {
+		Integer columnIndex = addColumnToHeader(workHeader, columnName);
+		XLSUtil.setCellValue(wb, sheetNum, rowNum, columnIndex, value);
+	}
+	private static void setCellByHeader(Workbook wb, int sheetNum, int rowNum, Map<String, Integer> workHeader,
+			String columnName, Double value) {
 		Integer columnIndex = addColumnToHeader(workHeader, columnName);
 		XLSUtil.setCellValue(wb, sheetNum, rowNum, columnIndex, value);
 	}
@@ -282,9 +439,14 @@ public class ExcelGeoQueryFiller {
 			Map<String, Integer> tmpColumns = XLSUtil.getHeader(wb, sheetNum, rowNum);
 			isValidHeader = true;
 			for(String neededColumn : neededColumns)
-				isValidHeader &= tmpColumns.get(neededColumn) != null;
-			if (isValidHeader)
-				headerColumns.putAll(tmpColumns);
+			{	
+				if ((neededColumn != null) && (neededColumn.isEmpty() == false))
+				{	
+					isValidHeader &= tmpColumns.get(neededColumn) != null;
+					if (isValidHeader)
+						headerColumns.putAll(tmpColumns);
+				}
+			}
 		} while ((isValidHeader == false) && (XLSUtil.isEndRow(wb, sheetNum, rowNum) == false));
 		
 		if (isValidHeader == true)
@@ -293,9 +455,11 @@ public class ExcelGeoQueryFiller {
 	}
 	
 
-	private static boolean exportToXML(final Workbook wb, final int mainSheet, final int mainStartRow, final Map<String, Integer> mainHeader, int mainHeaderRow, String fileName) {
+	private static boolean exportToXML(final Workbook wb, MldEntryType dataType, final int mainSheet, 
+			final Map<String, Integer> mainHeader, int mainHeaderRow, File fileName) {
 		//Find the secondary sheet
 		int xmlSheet = XLSUtil.getOrCreateSheet(wb, "XML Settings", 2);
+		boolean hasDataChanged = false;
 		
 		HashMap<String,Integer> xmlHeader = new HashMap<>();
 		int xmlHeaderRow = getHeaderRow(wb, xmlSheet, xmlHeader, COLUMN_XML_LEVEL, COLUMN_XML_NAME, COLUMN_XML_FROM);
@@ -306,6 +470,13 @@ public class ExcelGeoQueryFiller {
 		}
 		else
 		{
+			String newFileNameTmp = getPreHeaderProperty(wb, xmlSheet, xmlHeaderRow, PROPERTY_FILENAME);
+			if (newFileNameTmp != null)
+			{
+				File newFileName = new File(newFileNameTmp);
+				if ((!newFileName.isAbsolute()) && (fileName.getParent() != null))
+					fileName = new File(fileName.getParent() + "\\" + newFileName.getPath());
+			}
 			int xmlRow = xmlHeaderRow + 1;
 			
 			//Scan the list of xml levels
@@ -324,7 +495,7 @@ public class ExcelGeoQueryFiller {
 			}
 			
 			//Gather all rows with info in main xml
-			int mainRow = mainStartRow;
+			int mainRow = mainHeaderRow + 1;
 			ArrayList<Integer> rowsWithInfo = new ArrayList<>();
 			while (!XLSUtil.isEndRow(wb, mainSheet, mainRow)) {
 				String types = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_TYPE));
@@ -343,8 +514,8 @@ public class ExcelGeoQueryFiller {
 					int comp = 0;
 					for(String from : finalFroms)
 					{
-						String val1 = XLSUtil.getCellString(wb, mainSheet, o1, mainHeader.get(COLUMN_GOOGLE_TYPE_PREFIX + from));
-						String val2 = XLSUtil.getCellString(wb, mainSheet, o2, mainHeader.get(COLUMN_GOOGLE_TYPE_PREFIX + from));
+						String val1 = XLSUtil.getCellString(wb, mainSheet, o1, mainHeader.get(from));
+						String val2 = XLSUtil.getCellString(wb, mainSheet, o2, mainHeader.get(from));
 						comp = val1.compareTo(val2);
 						if (comp != 0)
 							break;
@@ -354,7 +525,7 @@ public class ExcelGeoQueryFiller {
 			
 			//Write the XML to a file			
 			try {
-				File xmlFilename = new File(fileName);
+				File xmlFilename = new File(fileName.getPath());
 
 				DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
 				DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
@@ -385,7 +556,7 @@ public class ExcelGeoQueryFiller {
 					boolean hasActualValue = false;
 					for(int i = froms.size() - 1 ; i >= 0 ; --i)
 					{
-						String value = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_GOOGLE_TYPE_PREFIX + froms.get(i)));
+						String value = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(froms.get(i)));
 						if (value.equals(prevValues.get(i)) == false)
 						{
 							hasActualValue |= !value.isEmpty();
@@ -418,17 +589,16 @@ public class ExcelGeoQueryFiller {
 						String altNames = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_ALTERNATIVE_NAME));
 						if (altNames.isEmpty() == false)
 							lastEntryToBeAdded.setAttribute("standAloneNames", altNames);
-						String groupStr = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_GROUP));
+						String groupStr = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_FLAGS));
 						if (groupStr.isEmpty() == false)
-							lastEntryToBeAdded.setAttribute("group", groupStr);
+							lastEntryToBeAdded.setAttribute("flags", groupStr);
+						/*if (dataType == MldEntryType.Location)
+						{
+							String cmlValue = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_COUNTRY_REGION));
+							if (cmlValue.isEmpty() == false)
+								lastEntryToBeAdded.setAttribute("majorCity", cmlValue);
+						}*/
 					}
-					
-					/*String longitudeStr = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_LONGITUDE));
-					if (longitudeStr.isEmpty() == false)
-						entry.setAttribute("longitude", longitudeStr);
-					String latitudeStr = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_LONGITUDE));
-					if (latitudeStr.isEmpty() == false)
-						entry.setAttribute("latitude", latitudeStr);*/
 				}
 				
 				// write the content into xml file
@@ -443,34 +613,42 @@ public class ExcelGeoQueryFiller {
 				//Reupdate the row numbering
 				if (mainHeader.get(COLUMN_ORIG_ROW) != null)
 				{
-					mainRow = mainStartRow;
+					mainRow = mainHeaderRow + 1;
 					while (XLSUtil.isEndRow(wb, mainSheet, mainRow) == false)
 					{
-						String location = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_LOCATION));
-						String rowNum = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ORIG_ROW));
-						if ((location.isEmpty() == false) && (rowNum.isEmpty() == false))
-							setCellByHeader(wb, mainSheet, mainRow, mainHeader, COLUMN_ORIG_ROW, "");
+						int newOrderNum = rowsWithInfo.indexOf(new Integer(mainRow)) + 1;
+						String orderNum = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ORIG_ROW));
+						if (!orderNum.equals(newOrderNum == 0 ? "" : Integer.toString(newOrderNum)))
+						{
+							hasDataChanged = true;
+							setCellByHeader(wb, mainSheet, mainRow, mainHeader, COLUMN_ORIG_ROW, newOrderNum == -1 ? (Integer)null : new Integer(newOrderNum));
+						}
 						++mainRow;
 					}
 				}
-				
-				int rowCount = 0;
-				for(Integer row : rowsWithInfo)
-				{
-					setCellByHeader(wb, mainSheet, row, mainHeader, COLUMN_ORIG_ROW, ++rowCount);
-				}
-				
+								
 				XLSUtil.updateHeader(wb, mainSheet, mainHeaderRow, mainHeader);
-				
-				
-				
 			} catch (Exception e) {
 				e.printStackTrace();
 				return false;
 			}
 		}
 
-		return true;
+		return hasDataChanged;
+	}
+
+	private static String getPreHeaderProperty(Workbook wb, int sheetNum, int headerRow, String propertyName) {
+		int curRow = 0;
+		while ((curRow < headerRow) && (!XLSUtil.isEndRow(wb, sheetNum, curRow)))
+		{
+			String curPropName = XLSUtil.getCellString(wb, sheetNum, curRow, 0);
+			if (propertyName.equalsIgnoreCase(curPropName))
+			{
+				return XLSUtil.getCellString(wb, sheetNum, curRow, 1);
+			}
+			++curRow;
+		}
+		return null;
 	}
 
 	/**
@@ -481,8 +659,13 @@ public class ExcelGeoQueryFiller {
 	private static int containsWordFromListIndex(String string, ArrayList<String> list) {
 		for(int i = 0 ; i < list.size() ; ++i)
 		{
-			if (string.matches("(?i:.*\\b" + list.get(i) + "\\b.*)"))
-				return i;
+			String listItem = list.get(i);
+			if (listItem.startsWith(COLUMN_GOOGLE_TYPE_PREFIX))
+			{	
+				listItem = listItem.substring(COLUMN_GOOGLE_TYPE_PREFIX.length());
+				if (string.matches("(?i:.*\\b" + listItem + "\\b.*)"))
+					return i;
+			}
 		}
 		return -1;
 	}

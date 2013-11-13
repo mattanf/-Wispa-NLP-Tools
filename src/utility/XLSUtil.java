@@ -1,6 +1,5 @@
 package utility;
 
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -33,21 +32,20 @@ public class XLSUtil {
 		}
 	}
 
-	
 	public static boolean saveXLS(Workbook wb, String fileName) {
 		return saveXLS(wb, new File(fileName));
 	}
-		
+
 	public static boolean saveXLS(Workbook wb, File fileName) {
 		try {
 			FileOutputStream fileOut = new FileOutputStream(fileName.getPath() + ".tmp");
-			//write this workbook to an Outputstream.
+			// write this workbook to an Outputstream.
 			wb.write(fileOut);
 			fileOut.flush();
 			fileOut.close();
 			fileName.delete();
 			new File(fileName.getPath() + ".tmp").renameTo(fileName);
-			
+
 		} catch (IOException e) {
 			e.printStackTrace();
 			return false;
@@ -55,18 +53,15 @@ public class XLSUtil {
 		return true;
 	}
 
-	public static int getSheetNumber(Workbook source, String name) 
-	{
+	public static int getSheetNumber(Workbook source, String name) {
 		return source != null ? source.getSheetIndex(name) : -1;
 	}
-	
-	public static String getCellString(Workbook source, int rowNum, int columnNum) 
-	{
+
+	public static String getCellString(Workbook source, int rowNum, int columnNum) {
 		return getCellString(source, 0, rowNum, columnNum);
 	}
 
-	public static String getCellString(Workbook source, int sheetNum, int rowNum, int columnNum)
-	{
+	public static String getCellString(Workbook source, int sheetNum, int rowNum, int columnNum) {
 		Cell cell = getCell(source, sheetNum, rowNum, columnNum);
 		return getCellValueAsString(cell);
 	}
@@ -109,90 +104,94 @@ public class XLSUtil {
 	public static boolean isEndRow(Workbook wb, int rowNum) {
 		return isEndRow(wb, 0, rowNum);
 	}
+
 	public static boolean isEndRow(Workbook wb, int sheetNum, int rowNum) {
 		Sheet sheet = wb.getSheetAt(sheetNum);
 		return (sheet == null) || (rowNum > sheet.getLastRowNum());
 	}
 
-	public static Cell getCell(Workbook source, int rowNum, int columnNum)
-	{
+	public static Cell getCell(Workbook source, int rowNum, int columnNum) {
 		return getCell(source, 0, rowNum, columnNum);
 	}
-	
-	public static Cell getCell(Workbook source, int sheetNumber, int rowNum, int columnNum)
-	{
+
+	public static Cell getCell(Workbook source, int sheetNumber, int rowNum, int columnNum) {
 		return getCell(source, sheetNumber, rowNum, columnNum, false);
 	}
 
 	public static Cell getCell(Workbook source, int sheetNumber, int rowNum, int columnNum, boolean createIfNeeded) {
-		if (sheetNumber >= 0)
-		{
+		if (sheetNumber >= 0) {
 			Sheet sheet = source.getSheetAt(sheetNumber);
 			if (sheet != null) {
 				Row row = sheet.getRow(rowNum);
 				if ((row == null) && (createIfNeeded))
 					row = sheet.createRow(rowNum);
 				if (row != null) {
-					Cell cell =  row.getCell(columnNum);
+					Cell cell = row.getCell(columnNum);
 					if ((cell == null) && (createIfNeeded))
 						cell = row.createCell(columnNum);
 					return cell;
 				}
 			}
 		}
-		
+
 		return null;
 	}
 
 	public static boolean setCellString(Workbook source, int rowNum, int columnNum, String string) {
 		return setCellString(source, 0, rowNum, columnNum, string);
 	}
-	
+
 	public static boolean setCellString(Workbook source, int sheetNum, int rowNum, int columnNum, String string) {
 		Cell cell = getCell(source, sheetNum, rowNum, columnNum, true);
-		if (cell != null)
-		{
+		if (cell != null) {
 			cell.setCellValue(string);
 		}
 		return cell != null;
 	}
-	
-	public static boolean setCellValue(Workbook source, int sheetNum, int rowNum, int columnNum, boolean value) {
+
+	public static boolean setCellValue(Workbook source, int sheetNum, int rowNum, int columnNum, Boolean value) {
 		Cell cell = getCell(source, sheetNum, rowNum, columnNum, true);
-		if (cell != null)
-		{
-			cell.setCellValue(value);
-		}
-		return cell != null;
-	}
-	public static boolean setCellValue(Workbook source, int sheetNum, int rowNum, int columnNum, int value) {
-		Cell cell = getCell(source, sheetNum, rowNum, columnNum, true);
-		if (cell != null)
-		{
-			cell.setCellValue(value);
-		}
-		return cell != null;
-	}
-	
-	public static boolean setCellValue(Workbook source, int sheetNum, int rowNum, int columnNum, double value) {
-		Cell cell = getCell(source, sheetNum, rowNum, columnNum, true);
-		if (cell != null)
-		{
-			cell.setCellValue(value);
+		if (cell != null) {
+			if (value == null)
+				cell.setCellValue("");
+			else
+				cell.setCellValue(value);
 		}
 		return cell != null;
 	}
 
-	//Get all the values in a row and enters them to a map with their column number
+	public static boolean setCellValue(Workbook source, int sheetNum, int rowNum, int columnNum, Integer value) {
+		Cell cell = getCell(source, sheetNum, rowNum, columnNum, true);
+		if (cell != null) {
+			if (value == null)
+				cell.setCellValue("");
+			else
+				cell.setCellValue(value);
+		}
+		return cell != null;
+	}
+
+	public static boolean setCellValue(Workbook source, int sheetNum, int rowNum, int columnNum, Double value) {
+		Cell cell = getCell(source, sheetNum, rowNum, columnNum, true);
+		if (cell != null) {
+			if (value == null)
+				cell.setCellValue("");
+			else
+				cell.setCellValue(value);
+		}
+		return cell != null;
+	}
+
+	// Get all the values in a row and enters them to a map with their column number
 	public static Map<String, Integer> getHeader(Workbook wb, int sheetNum, int rowNum) {
 		HashMap<String, Integer> map = new HashMap<>();
-		
+
 		Sheet sheet = wb.getSheetAt(sheetNum);
 		if (sheet != null) {
 			Row row = sheet.getRow(rowNum);
 			if (row != null) {
-				//scan all available columns in the row
-				for(int columnNum = row.getFirstCellNum() ; columnNum <= row.getLastCellNum() ; ++columnNum) {
+				// scan all available columns in the row
+				for (int columnNum = row.getFirstCellNum(); columnNum <= row.getLastCellNum(); ++columnNum) {
 					Cell cell = getCell(wb, sheetNum, rowNum, columnNum);
 					String headerValue = getCellValueAsString(cell);
 					if (headerValue.isEmpty() == false)
@@ -200,24 +199,22 @@ public class XLSUtil {
 				}
 			}
 		}
-		return map;	
+		return map;
 	}
 
 	public static void updateHeader(Workbook wb, int sheetNum, int rowNum, Map<String, Integer> headerValues) {
-		for(Entry<String, Integer> entry : headerValues.entrySet())
-		{
+		for (Entry<String, Integer> entry : headerValues.entrySet()) {
 			int columnNum = entry.getValue();
 			String name = entry.getKey();
 			if (!XLSUtil.getCellString(wb, sheetNum, rowNum, columnNum).equals(name))
 				XLSUtil.setCellString(wb, sheetNum, rowNum, columnNum, name);
 		}
-		
+
 	}
-	
+
 	public static int getOrCreateSheet(Workbook wb, String sheetName, int defaultOrder) {
 		Sheet sh = wb.getSheet(sheetName);
-		if (sh == null)
-		{
+		if (sh == null) {
 			wb.createSheet(sheetName);
 			if (defaultOrder != -1)
 				wb.setSheetOrder(sheetName, defaultOrder);
@@ -225,21 +222,18 @@ public class XLSUtil {
 		return wb.getSheetIndex(sheetName);
 	}
 
-	public static void orderRows(Workbook wb, int sheetNum, int orderFrom, List<Integer> rowsNumbers)
-	{
+	public static void orderRows(Workbook wb, int sheetNum, int orderFrom, List<Integer> rowsNumbers) {
 		Sheet sheet = wb.getSheetAt(sheetNum);
 		if (sheet != null) {
 			ArrayList<Row> rows = new ArrayList<>();
-			for(Integer rowNum : rowsNumbers)
-			{
+			for (Integer rowNum : rowsNumbers) {
 				rows.add(sheet.getRow(rowNum));
 			}
-			
-			for(Row row : rows)
-			{
+
+			for (Row row : rows) {
 				if (row != null)
 					row.setRowNum(orderFrom++);
-			}			
+			}
 		}
 	}
 }

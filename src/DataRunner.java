@@ -1,3 +1,4 @@
+import java.io.Console;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -17,7 +18,6 @@ import org.apache.poi.xssf.usermodel.XSSFCellStyle;
 import org.apache.poi.xssf.usermodel.XSSFColor;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -33,17 +33,21 @@ import java.util.logging.Level;
 
 import java.util.logging.Logger;
 
+
 import com.google.appengine.tools.development.testing.LocalDatastoreServiceTestConfig;
 import com.google.appengine.tools.development.testing.LocalServiceTestHelper;
 import com.google.apphosting.api.ApiProxy;
+import com.pairapp.engine.parser.MessageNormalizer;
 import com.pairapp.engine.parser.MessageParser;
 import com.pairapp.engine.parser.data.PostData;
 import com.pairapp.engine.parser.data.PostFieldData;
 import com.pairapp.engine.parser.data.PostFieldType;
 import com.pairapp.engine.parser.data.VariantDate;
 import com.pairapp.engine.parser.data.VariantEnum;
+import com.pairapp.engine.parser.data.VariantType;
 import com.pairapp.engine.parser.data.VariantTypeEnums;
 import com.pairapp.utilities.LogLineFormatter;
+
 
 public class DataRunner {
 
@@ -151,7 +155,17 @@ public class DataRunner {
 	 */
 	public static void main(String[] args) throws Exception {
 		
-		
+		/*foo(4);
+		foo(3);
+		foo(2);
+		int r = 2;
+		while (r < 6)
+		{
+			
+			Thread.sleep(1000);
+			
+		}*/
+		//foo();
 		// This class does in a round about way initializes the log. we need to call it before making changes to the
 		// loging mechnism
 		// GeocodeQuerier.instance();
@@ -210,6 +224,48 @@ public class DataRunner {
 			}
 		}
 	}
+
+
+	private static void foo(int value) {
+		final int val = value;
+				
+		Thread d = new Thread(new Runnable() {
+
+			@Override
+			public void run() {
+
+				while (true)
+				{
+					try {
+						Thread.sleep(1000);
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					System.out.print(val);
+				}
+				
+			}});
+		d.start();
+		
+	}
+
+
+	/**
+	 * 
+	 
+	private static void foo() {
+		try {
+			com.google.code.geocoder.GeoAddressService r;
+			TimedGeocoder tg = new TimedGeocoder(10000,10000);
+			GeocodeResponse req = tg.geocode(new GeocoderRequestBuilder().setAddress("תל אביב").getGeocoderRequest());
+			System.out.println(req.toString());
+		}
+		catch (Throwable e){ 
+			e.printStackTrace();
+		}
+	}*/
+
 
 	private static String extendFileName(String fileName, String extention) {
 		int delimPer = fileName.lastIndexOf('.');
@@ -338,7 +394,8 @@ public class DataRunner {
 				String fieldName = outputHeader.getKey();
 				Integer origHeaderPos = metaDataHeaders.get(fieldName);
 				boolean isValidAgnosticField = isValidAgnosticFieldName(fieldName);
-				
+				boolean isBooleanColumn = (PostFieldType.toEnum(fieldName) != null) && (PostFieldType.toEnum(fieldName).getValueType().equals(VariantType.Boolean));
+						
 				if (origHeaderPos != null) {
 					
 					// Compare the values
@@ -354,10 +411,16 @@ public class DataRunner {
 							if (origValue.equalsIgnoreCase("[Empty]"))
 								origValue = "";
 							
-							origValue = normNumeric(origValue);
 							boolean isFalseNegative = (origValue.isEmpty() == false) && (genValue.isEmpty() == true);
 							boolean isFalsePositive = !isFalseNegative && origValue.compareToIgnoreCase(genValue) != 0;
+							if (isBooleanColumn || (isBooleanString(origValue) && isBooleanString(genValue)))
+							{
+								isFalseNegative = (Boolean.valueOf(origValue) == true) && (Boolean.valueOf(genValue) == false);
+								isFalsePositive = (Boolean.valueOf(origValue) == false) && (Boolean.valueOf(genValue) == true);
+							}
+							
 							boolean isSame = !isFalseNegative && !isFalsePositive;
+							
 							
 							if (isFalsePositive) 
 								wrongness = Math.min(wrongness, 2);
@@ -388,6 +451,11 @@ public class DataRunner {
 			}
 		}
 	}
+
+	private static boolean isBooleanString(String value) {
+		return "False".equalsIgnoreCase(value) || "True".equalsIgnoreCase(value);
+	}
+
 
 	private static String normNumeric(String cellString) {
 		if (cellString != null)

@@ -986,7 +986,7 @@ public class DataRunner {
 		if (outData != null) {
 			PostFieldData data = outData.getField(name);
 			if (data != null)
-				return data.getValue().getStringValue();
+				return data.getValue().toString();
 		}
 		return "";
 	}

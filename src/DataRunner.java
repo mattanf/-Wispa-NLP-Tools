@@ -986,7 +986,11 @@ public class DataRunner {
 		if (outData != null) {
 			PostFieldData data = outData.getField(name);
 			if (data != null)
-				return data.getValue().toString();
+			{
+				if (data.getValue() instanceof VariantDate)
+					return data.getValue().toString();
+				else return data.getValue().getStringValue();
+			}
 		}
 		return "";
 	}

@@ -236,4 +236,83 @@ public class XLSUtil {
 			}
 		}
 	}
+	
+	public static void setCellByHeader(Workbook wb, int sheetNum, int rowNum, Map<String, Integer> workHeader,
+			String columnName, String value) {
+		Integer columnIndex = addColumnToHeader(workHeader, columnName);
+		XLSUtil.setCellString(wb, sheetNum, rowNum, columnIndex, value);
+	}
+	
+	public static void setCellByHeader(Workbook wb, int sheetNum, int rowNum, Map<String, Integer> workHeader,
+			String columnName, Boolean value) {
+		Integer columnIndex = addColumnToHeader(workHeader, columnName);
+		XLSUtil.setCellValue(wb, sheetNum, rowNum, columnIndex, value);
+	}
+	public static void setCellByHeader(Workbook wb, int sheetNum, int rowNum, Map<String, Integer> workHeader,
+			String columnName, Integer value) {
+		Integer columnIndex = addColumnToHeader(workHeader, columnName);
+		XLSUtil.setCellValue(wb, sheetNum, rowNum, columnIndex, value);
+	}
+	public static void setCellByHeader(Workbook wb, int sheetNum, int rowNum, Map<String, Integer> workHeader,
+			String columnName, Double value) {
+		Integer columnIndex = addColumnToHeader(workHeader, columnName);
+		XLSUtil.setCellValue(wb, sheetNum, rowNum, columnIndex, value);
+	}
+	
+	/**
+	 * @param workHeader
+	 * @param columnName
+	 * @return
+	 */
+	public static Integer addColumnToHeader(Map<String, Integer> workHeader, String columnName) {
+		Integer columnIndex = workHeader.get(columnName);
+		if (columnIndex == null) {
+			columnIndex = new Integer(0);
+			for (Integer occupiedColumn : workHeader.values()) {
+				columnIndex = Math.max(occupiedColumn + 1, columnIndex);
+			}
+			workHeader.put(columnName, columnIndex);
+		}
+		return columnIndex;
+	}
+	
+	public static int getHeaderRow(Workbook wb, int sheetNum, Map<String, Integer> headerColumns, String ... neededColumns)
+	{
+		int rowNum = -1;
+		boolean isValidHeader = false;
+		do {
+			++rowNum;
+			Map<String, Integer> tmpColumns = XLSUtil.getHeader(wb, sheetNum, rowNum);
+			isValidHeader = true;
+			for(String neededColumn : neededColumns)
+			{	
+				if ((neededColumn != null) && (neededColumn.isEmpty() == false))
+				{	
+					isValidHeader &= tmpColumns.get(neededColumn) != null;
+					if (isValidHeader)
+						headerColumns.putAll(tmpColumns);
+				}
+			}
+		} while ((isValidHeader == false) && (XLSUtil.isEndRow(wb, sheetNum, rowNum) == false));
+		
+		if (isValidHeader == true)
+			return rowNum;
+		else return -1;
+	}
+	
+
+	public static String getPreHeaderProperty(Workbook wb, int sheetNum, int headerRow, String propertyName) {
+		int curRow = 0;
+		while ((curRow < headerRow) && (!XLSUtil.isEndRow(wb, sheetNum, curRow)))
+		{
+			String curPropName = XLSUtil.getCellString(wb, sheetNum, curRow, 0);
+			if (propertyName.equalsIgnoreCase(curPropName))
+			{
+				return XLSUtil.getCellString(wb, sheetNum, curRow, 1);
+			}
+			++curRow;
+		}
+		return null;
+	}
+	
 }

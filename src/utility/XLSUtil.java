@@ -75,7 +75,7 @@ public class XLSUtil {
 			case Cell.CELL_TYPE_NUMERIC:
 				double val = cell.getNumericCellValue();
 				if (val - Math.floor(val) == 0)
-					return Long.toString((int) val);
+					return Long.toString((long) val);
 				else
 					return Double.toString(val);
 

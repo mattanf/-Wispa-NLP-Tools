@@ -48,7 +48,12 @@ public class PhrasePrinter {
 				while (tsIt.hasNext())
 				{
 					String key = tsIt.next();
-					System.out.println(key + "=" + rep.unrollString(retRepo.getPhrase(key, null), null));
+					try {
+						System.out.println(key + "=" + rep.unrollString(retRepo.getPhrase(key, null), null));
+					}
+					catch(Throwable e) {
+						System.out.println(key + "= <Requires running system>");
+					}
 				}
 			}
 		}

@@ -4,9 +4,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import com.pairapp.engine.parser.data.PostFieldType;
-import com.pairapp.engine.parser.data.Variant;
 import com.pairapp.engine.parser.data.VariantEnum;
-import com.pairapp.engine.parser.data.VariantType;
 import com.pairapp.engine.parser.data.PostFieldType.Persistency;
 import com.pairapp.utilities.LogLineFormatter;
 
@@ -31,6 +29,7 @@ public class ForumSourceWriter {
 
 	final static String COLUMN_ORDER = "Order";
 	final static String COLUMN_REMARKS = "Remarks";
+	final static String COLUMN_ADDED_ON = "Added On";
 	final static String COLUMN_ID = "Id";
 	final static String COLUMN_BILLBOARD = "Billboard";
 	final static String COLUMN_PRIVACY = "Privacy";
@@ -100,9 +99,10 @@ public class ForumSourceWriter {
 			DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
 			
 			//Check for redundent coluymns
-			ArrayList<String> redundentColumns = new ArrayList(mainHeader.keySet());
+			ArrayList<String> redundentColumns = new ArrayList<String>(mainHeader.keySet());
 			redundentColumns.remove(COLUMN_ORDER);
 			redundentColumns.remove(COLUMN_REMARKS);
+			redundentColumns.remove(COLUMN_ADDED_ON);
 			redundentColumns.remove(COLUMN_ID);
 			redundentColumns.remove(COLUMN_BILLBOARD);
 			redundentColumns.remove(COLUMN_PRIVACY);
@@ -181,6 +181,7 @@ public class ForumSourceWriter {
 	private static boolean moveAttributeToXml(Element srcElement, Workbook wb, int mainSheet, int mainRow,
 			Map<String, Integer> mainHeader, String columnName, boolean isRequired) {
 		String value = mainHeader.containsKey(columnName) ? XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(columnName)) : "";
+		value = value.trim();
 		if (!value.isEmpty()) {
 			StringBuilder attribName = new StringBuilder(columnName);
 			attribName.setCharAt(0, Character.toLowerCase(attribName.charAt(0)));
@@ -197,6 +198,7 @@ public class ForumSourceWriter {
 	private static boolean moveNodeToXml(Element srcElement, Workbook wb, int mainSheet, int mainRow,
 			Map<String, Integer> mainHeader, PostFieldType property, boolean isRequired) {
 		String value = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(property.name()));
+		value = value.trim();
 		if (!value.isEmpty()) {
 			if (!isValidPropertyValue(property, value))
 			{

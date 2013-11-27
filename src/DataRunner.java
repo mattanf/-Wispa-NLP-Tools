@@ -1,4 +1,3 @@
-import java.io.Console;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -36,22 +35,25 @@ import java.util.logging.Logger;
 
 import com.google.appengine.tools.development.testing.LocalDatastoreServiceTestConfig;
 import com.google.appengine.tools.development.testing.LocalServiceTestHelper;
+import com.google.appengine.tools.remoteapi.RemoteApiInstaller;
+import com.google.appengine.tools.remoteapi.RemoteApiOptions;
 import com.google.apphosting.api.ApiProxy;
-import com.pairapp.engine.parser.MessageNormalizer;
+import com.google.apphosting.api.ApiProxy.Environment;
 import com.pairapp.engine.parser.MessageParser;
 import com.pairapp.engine.parser.data.PostData;
-import com.pairapp.engine.parser.data.PostFieldData;
 import com.pairapp.engine.parser.data.PostFieldType;
+import com.pairapp.engine.parser.data.Variant;
 import com.pairapp.engine.parser.data.VariantDate;
 import com.pairapp.engine.parser.data.VariantEnum;
 import com.pairapp.engine.parser.data.VariantType;
 import com.pairapp.engine.parser.data.VariantTypeEnums;
+import com.pairapp.engine.parser.location.GeocodeQuerier;
 import com.pairapp.utilities.LogLineFormatter;
 
 
 public class DataRunner {
 
-	static class TestEnvironment implements ApiProxy.Environment {
+	static class TestEnvironment implements ApiProxy.Environment  {
 		  @Override
 		  public String getAppId() {
 		    return "test";
@@ -147,6 +149,7 @@ public class DataRunner {
 	static ThreadLocal<MessageParser> threadMessageParser = new ThreadLocal<MessageParser>();
 	static ExecutorService executorService = Executors.newFixedThreadPool(NUMBER_OF_THREADS);
 	static boolean workThreaded = true;
+	static boolean connectToLocalServer = false;
 	
 	// private static int endParseRow = -1;
 	/**
@@ -186,6 +189,8 @@ public class DataRunner {
 					startParseRow = Integer.valueOf(args[fileIndex].substring(3)) - 1;
 				if (args[fileIndex].matches("-re\\d+"))
 					endParseRow = Integer.valueOf(args[fileIndex].substring(3)) - 1;
+				if (args[fileIndex].matches("-local"))
+					connectToLocalServer = true;
 				++fileIndex;
 			} else
 				break;
@@ -207,7 +212,9 @@ public class DataRunner {
 				System.err.println("Error: Specified file '" + args[fileIndex] + "' could not be read.");
 			else {
 				String secondaryFileName = args[fileIndex];
-
+				if (connectToLocalServer);
+					connectToLocalServer();
+				GeocodeQuerier.instance().setEnableGoogleQuerying(connectToLocalServer);
 				secondaryFileName = extendFileName(secondaryFileName, "-compiled");
 				File targetFile = new File(secondaryFileName);
 				if (args.length > fileIndex + 1)
@@ -216,57 +223,31 @@ public class DataRunner {
 				cellStyles = new HashMap<>();
 				System.out.println("Started parse process");
 				datastoreHelper.setUp();
+				Environment prevEnv = ApiProxy.getCurrentEnvironment();
 				ApiProxy.setEnvironmentForCurrentThread(testEnvironment);
 
 				analyzeFile(sourceFile, targetFile);
+				ApiProxy.setEnvironmentForCurrentThread(prevEnv);
 				datastoreHelper.tearDown();
 				System.out.println("Ended parse process");
 			}
 		}
 	}
 
-
-	private static void foo(int value) {
-		final int val = value;
-				
-		Thread d = new Thread(new Runnable() {
-
-			@Override
-			public void run() {
-
-				while (true)
-				{
-					try {
-						Thread.sleep(1000);
-					} catch (InterruptedException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
-					System.out.print(val);
-				}
-				
-			}});
-		d.start();
-		
-	}
-
-
-	/**
-	 * 
-	 
-	private static void foo() {
-		try {
-			com.google.code.geocoder.GeoAddressService r;
-			TimedGeocoder tg = new TimedGeocoder(10000,10000);
-			GeocodeResponse req = tg.geocode(new GeocoderRequestBuilder().setAddress("תל אביב").getGeocoderRequest());
-			System.out.println(req.toString());
-		}
-		catch (Throwable e){ 
-			e.printStackTrace();
-		}
-	}*/
-
-
+	
+	
+    public static void connectToLocalServer() throws IOException  {
+        String username = "mattanf@gmail.com";//System.console().readLine("username: ");
+        String password = "some_pass";
+         //   new String(System.console().readPassword("password: "));
+        RemoteApiOptions options = new RemoteApiOptions()
+            //.server("wispa-test.appspot.com", 443)
+        	.server("localhost", 8888)
+            .credentials(username, password);
+        RemoteApiInstaller installer = new RemoteApiInstaller();
+        installer.install(options);
+        options.reuseCredentials(username, installer.serializeCredentials());
+    }
 	private static String extendFileName(String fileName, String extention) {
 		int delimPer = fileName.lastIndexOf('.');
 		if (delimPer != -1)
@@ -300,7 +281,7 @@ public class DataRunner {
 			if (!isSuccess)
 				System.err.println("Error: ParserTree could not be find header message.");
 			else {
-				isSuccess = parser.init(false);
+				isSuccess = parser.init(connectToLocalServer);
 				if (!isSuccess)
 					System.err.println("Error: ParserTree could not be initialized. Data source could not be found.");
 				else {
@@ -487,7 +468,7 @@ public class DataRunner {
 		}
 		String baseKey = isFalseNegative ? "FN" : (isFalsePositive ? "FP" : "EQ");
 		incrementFieldInMap(fieldMap, baseKey);
-		boolean isValidAgnosticField = isValidAgnosticFieldName(fieldName);
+		//boolean isValidAgnosticField = isValidAgnosticFieldName(fieldName);
 		
 		if (isValid == true) {
 			incrementFieldInMap(fieldMap, "Valid-" + baseKey);
@@ -801,7 +782,14 @@ public class DataRunner {
 			ApiProxy.setEnvironmentForCurrentThread(testEnvironment);
 
 			parser = new MessageParser();
-			parser.init(false);
+			if (connectToLocalServer);
+				try {
+					connectToLocalServer();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			parser.init(connectToLocalServer);
 			threadMessageParser.set(parser);
 		}
 		ParseThreadData poll = threadInputQueue.poll();
@@ -923,15 +911,14 @@ public class DataRunner {
 	private static void gatherColumnsFromOutputData(Map<String, Integer> expectedHeaders, PostData inData,
 			PostData outData, Workbook wb, int headerRowNum, int expectedHeadersOffset) {
 		if (outData != null) {
-			Iterator<PostFieldData> it = outData.getFieldIterator();
-			while (it.hasNext()) {
-				PostFieldData field = it.next();
-				if ((expectedHeaders.containsKey(field.getName()) == false) &&
-						(inData.getField(field.getName()) == null)) {
+			Iterable<Entry<String, Variant>> itr = outData.getFieldSet();
+			for(Entry<String, Variant> ent : itr) {
+				if ((expectedHeaders.containsKey(ent.getKey()) == false) &&
+						(inData.getField(ent.getKey()) == null)) {
 					Cell headerCell = getCell(wb, 0, headerRowNum, expectedHeadersOffset + expectedHeaders.size(), true);
 					if (headerCell != null)
-						headerCell.setCellValue(field.getName());
-					expectedHeaders.put(field.getName(), expectedHeadersOffset + expectedHeaders.size());
+						headerCell.setCellValue(ent.getKey());
+					expectedHeaders.put(ent.getKey(), expectedHeadersOffset + expectedHeaders.size());
 				}
 			}
 		}
@@ -984,12 +971,12 @@ public class DataRunner {
 
 	static private String getFieldSafe(PostData outData, String name) {
 		if (outData != null) {
-			PostFieldData data = outData.getField(name);
+			Variant data = outData.getField(name);
 			if (data != null)
 			{
-				if (data.getValue() instanceof VariantDate)
-					return data.getValue().toString();
-				else return data.getValue().getStringValue();
+				if (data instanceof VariantDate)
+					return data.toString();
+				else return data.getStringValue();
 			}
 		}
 		return "";

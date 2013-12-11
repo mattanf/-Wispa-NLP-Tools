@@ -189,7 +189,7 @@ public class XLSUtil {
 		Sheet sheet = wb.getSheetAt(sheetNum);
 		if (sheet != null) {
 			Row row = sheet.getRow(rowNum);
-			if (row != null) {
+			if ((row != null) && (row.getLastCellNum() != -1)){
 				// scan all available columns in the row
 				for (int columnNum = row.getFirstCellNum(); columnNum <= row.getLastCellNum(); ++columnNum) {
 					Cell cell = getCell(wb, sheetNum, rowNum, columnNum);

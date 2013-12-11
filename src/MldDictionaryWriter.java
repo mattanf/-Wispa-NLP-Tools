@@ -6,9 +6,11 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
+import com.google.appengine.labs.repackaged.com.google.common.base.Objects;
 import com.google.code.geocoder.model.GeocoderAddressComponent;
 import com.google.code.geocoder.model.GeocoderResult;
 import com.google.code.geocoder.model.LatLng;
+import com.google.gwt.dev.util.collect.HashSet;
 
 import utility.AddressComponent;
 import utility.GoogleGeocodeQuerier;
@@ -22,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.TreeMap;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -66,6 +69,7 @@ public class MldDictionaryWriter {
 	final static String COLUMN_ALTERNATIVE_NAME = "Alternative Names";
 	final static String COLUMN_FLAGS = "Flags";
 	final static String COLUMN_COUNTRY_REGION = "CountryRegion";
+	final static String COLUMN_USE_IN_XML = "UseInXML";
 	
 	final static String COLUMN_XML_LEVEL = "Level";
 	final static String COLUMN_XML_NAME = "Name";
@@ -81,7 +85,7 @@ public class MldDictionaryWriter {
 	final static String COLUMN_CLOSE_BY_REGION = "CloseByRegion";
 	
 	
-	final static String FULL_GOOGLE_NAME = "Google name";
+	final static String FULL_GOOGLE_NAME = "SearchName";
 
 	/**
 	 * @param args
@@ -107,9 +111,10 @@ public class MldDictionaryWriter {
 		int mainSheet = 0;
 		
 		// Find the header row
-		Map<String, Integer> mainHeader = new HashMap<String, Integer>();
-		int mainHeaderRow = getHeaderRow(wb, mainSheet, mainHeader, COLUMN_LOCATION, COLUMN_IS_PROCESSED);
-		
+		Map<String, Integer> mainHeader = new TreeMap<String, Integer>(String.CASE_INSENSITIVE_ORDER);
+		int mainHeaderRow = getHeaderRow(wb, mainSheet, mainHeader, COLUMN_LATITUDE, COLUMN_LONGITUDE);
+		if (mainHeaderRow == -1)
+			mainHeaderRow = getHeaderRow(wb, mainSheet, mainHeader, COLUMN_LOCATION, COLUMN_IS_PROCESSED);
 		if (mainHeaderRow == -1) {
 			System.out.println("No header with rows \"" + COLUMN_LOCATION + "\" and \"" + COLUMN_IS_PROCESSED +
 					"\" found in main sheet.");
@@ -123,14 +128,16 @@ public class MldDictionaryWriter {
 			addColumnToHeader(mainHeader, COLUMN_ALTERNATIVE_NAME);
 			addColumnToHeader(mainHeader, COLUMN_FLAGS);
 			
-			HashMap<String, Integer> calculatedLoc = getPreCalculatedLocations(wb, mainSheet, mainHeaderRow, mainHeader);
-			
 			boolean hasUpdated = false;
 			if (dataType == MldEntryType.Location)
 			{
 				addColumnToHeader(mainHeader, COLUMN_LATITUDE);
 				addColumnToHeader(mainHeader, COLUMN_LONGITUDE);
-				hasUpdated = updateGeoDataInExcel(wb, mainSheet, mainHeader, mainHeaderRow, calculatedLoc);
+				if (mainHeader.get(COLUMN_LOCATION) != null)
+				{
+					addColumnToHeader(mainHeader, COLUMN_IS_PROCESSED);
+					hasUpdated = updateGeoDataInExcel(wb, mainSheet, mainHeader, mainHeaderRow);
+				}
 				hasUpdated |= updateClosestMajorCity(wb, mainSheet, mainHeader, mainHeaderRow);
 			}
 			
@@ -151,9 +158,8 @@ public class MldDictionaryWriter {
 	 * @param calculatedLoc
 	 */
 	private static boolean updateGeoDataInExcel(Workbook wb, int mainSheet, 
-			Map<String, Integer> mainHeader, int mainHeaderRow, HashMap<String, Integer> calculatedLoc) {
+			Map<String, Integer> mainHeader, int mainHeaderRow) {
 		boolean hasUpdated = false;
-		
 		//Find the secondary sheet
 		int secSheet = XLSUtil.getOrCreateSheet(wb, "Secondary", 1);
 		if (secSheet == 0)
@@ -164,6 +170,10 @@ public class MldDictionaryWriter {
 		Map<String, Integer> secHeader = XLSUtil.getHeader(wb, secSheet, secRow);
 		int secHeaderRow = secRow++;
 
+		
+		//Get the locations that already have been calculated
+		Map<String, Integer> calculatedLoc = getPreCalculatedLocations(wb, mainSheet, mainHeaderRow, mainHeader);
+		
 		// Find the last row in the secondary sheet
 		while (XLSUtil.isEndRow(wb, secSheet, secRow) == false)
 			++secRow;
@@ -171,7 +181,8 @@ public class MldDictionaryWriter {
 		GoogleGeocodeQuerier geoQuerier = new GoogleGeocodeQuerier("en");
 		geoQuerier.setRemoveComponent(Arrays.asList(AddressComponent.acCountry, AddressComponent.acStreetAddress,
 				AddressComponent.acRoute, AddressComponent.acIntersection, AddressComponent.acPremise,
-				AddressComponent.acSubpremise, AddressComponent.acAirport, AddressComponent.acPark));
+				AddressComponent.acSubpremise, AddressComponent.acAirport, AddressComponent.acPark, 
+				AddressComponent.acSynagogue, AddressComponent.acChurch));
 		
 		boolean failedQuery = false;
 		//Scan all locations query them and output the results
@@ -190,21 +201,38 @@ public class MldDictionaryWriter {
 					failedQuery = true;
 				}
 				else {
-					// Write the query result
-					boolean hasResult = !queryRes.isEmpty();
+					//Find the best fit
+					int fitIndex = -1;
+					String trimmedLocation = location.split(",")[0].trim();
+					for(int i = 0 ; i < queryRes.size(); ++i)
+					{
+						GeocoderResult res = queryRes.get(i);
+						String trimmedRes = res.getFormattedAddress().split(",")[0].trim();
+						if (trimmedRes.equalsIgnoreCase(trimmedLocation))
+						{
+							fitIndex = i;
+							break;							
+						}
+					}
+					
 					setCellByHeader(wb, mainSheet, mainRow, mainHeader, COLUMN_IS_PROCESSED, true);
-					setCellByHeader(wb, mainSheet, mainRow, mainHeader, COLUMN_HAS_RESULT,
-							Boolean.toString(hasResult));
-					if (queryRes.size() > 1)
+					setCellByHeader(wb, mainSheet, mainRow, mainHeader, COLUMN_HAS_RESULT, fitIndex != -1);
+					
+					if (fitIndex != -1)
+					{
+						writeGeoResultToRow(wb, mainSheet, mainRow, mainHeader, queryRes.get(fitIndex), true);
+						queryRes.remove(fitIndex);
+					}
+					
+					if (queryRes.size() > 0)
 					{
 						setCellByHeader(wb, mainSheet, mainRow, mainHeader, COLUMN_SEC_RESULT_START, secRow + 1);
-						setCellByHeader(wb, mainSheet, mainRow, mainHeader, COLUMN_SEC_RESULT_END, secRow + queryRes.size());
+						setCellByHeader(wb, mainSheet, mainRow, mainHeader, COLUMN_SEC_RESULT_END, secRow + queryRes.size() + 1);
 					}
-					writeGeoResultToRow(wb, mainSheet, mainRow, mainHeader, hasResult ? queryRes.get(0) : null, true);
 					
 
 					// Write the non-main result
-					for (int i = 1; i < queryRes.size(); ++i) {
+					for (int i = 0; i < queryRes.size(); ++i) {
 						writeGeoResultToRow(wb, secSheet, secRow, secHeader, queryRes.get(i), false);
 						++secRow;
 					}
@@ -221,9 +249,9 @@ public class MldDictionaryWriter {
 		return hasUpdated;
 	}
 
-	private static HashMap<String, Integer> getPreCalculatedLocations(Workbook wb, int mainSheet, int mainHeaderRow,
+	private static Map<String, Integer> getPreCalculatedLocations(Workbook wb, int mainSheet, int mainHeaderRow,
 			Map<String, Integer> mainHeader) {
-		HashMap<String, Integer> precalced = new HashMap<String, Integer>();
+		Map<String, Integer> precalced = new TreeMap<String, Integer>(String.CASE_INSENSITIVE_ORDER);
 		
 		int mainRow = mainHeaderRow + 1;
 		//Scan all locations query them and output the results
@@ -309,7 +337,7 @@ public class MldDictionaryWriter {
 				while (!XLSUtil.isEndRow(wb, citiesSheet, cityRow))
 				{
 					try{
-						
+
 						String name = XLSUtil.getCellString(wb, citiesSheet, cityRow, citiesHeader.get(columnToAdd));
 						String compareValue = null;
 						if (columnToCompare != null)
@@ -354,7 +382,7 @@ public class MldDictionaryWriter {
 									newValue = getClosestLocationName(location, mapInCompared);
 								}
 								String prevValue = XLSUtil.getCellString(wb, mainSheet, mainRow, columnIndex);
-								if (prevValue != newValue)
+								if (!prevValue.equals(newValue))
 								{
 									XLSUtil.setCellString(wb, mainSheet, mainRow, columnIndex, newValue);
 									isChanged = true;
@@ -461,7 +489,7 @@ public class MldDictionaryWriter {
 		int xmlSheet = XLSUtil.getOrCreateSheet(wb, "XML Settings", 2);
 		boolean hasDataChanged = false;
 		
-		HashMap<String,Integer> xmlHeader = new HashMap<>();
+		TreeMap<String,Integer> xmlHeader = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 		int xmlHeaderRow = getHeaderRow(wb, xmlSheet, xmlHeader, COLUMN_XML_LEVEL, COLUMN_XML_NAME, COLUMN_XML_FROM);
 		if (xmlHeaderRow == -1)
 		{
@@ -495,17 +523,32 @@ public class MldDictionaryWriter {
 				++xmlRow;
 			}
 			
+			HashSet<String> stateNames = new HashSet<>();
+			boolean hasStates = names.isEmpty() == false && names.get(0).equals("State");
 			//Gather all rows with info in main xml
 			int mainRow = mainHeaderRow + 1;
+			Integer columnUseInXml = mainHeader.get(COLUMN_USE_IN_XML);
 			ArrayList<Integer> rowsWithInfo = new ArrayList<>();
 			while (!XLSUtil.isEndRow(wb, mainSheet, mainRow)) {
-				String types = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_TYPE));
-				int wordIndex = containsWordFromListIndex(types, froms);
-				if (wordIndex != -1)
+				boolean useRow = true;
+				
+				if (columnUseInXml != null)
+					useRow = Boolean.valueOf(XLSUtil.getCellString(wb, mainSheet, mainRow, columnUseInXml));
+				else
+				{
+					String types = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_TYPE));
+					useRow = containsWordFromListIndex(types, froms) != -1;
+				}
+				
+				if (useRow)
+				{
 					rowsWithInfo.add(new Integer(mainRow));
+					if (hasStates)
+						stateNames.add(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get("State")));
+				}
 				++mainRow;
 			}
-			
+				
 			final ArrayList<String> finalFroms = froms;
 			//Order the rows
 			Collections.sort(rowsWithInfo, new Comparator<Integer>() {
@@ -526,109 +569,127 @@ public class MldDictionaryWriter {
 			
 			//Write the XML to a file			
 			try {
-				File xmlFilename = new File(fileName.getPath());
-
-				DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
-				DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
-
-				// root elements
-				Document doc = docBuilder.newDocument();
-				Element rootElement = doc.createElement("MultiLayerDictionary");
-				doc.appendChild(rootElement);
-				rootElement.setAttribute("type", dataType.name());
-				rootElement.setAttribute("defaultSearchFlags", defaultSearchFlags);
-				
-
-				Element levels = doc.createElement("Levels");
-				rootElement.appendChild(levels);
-				for(String name : names)
+				if (stateNames.isEmpty())
+					stateNames.add("");
+				if (hasStates)
 				{
-					Element level = doc.createElement("Level");
-					level.setAttribute("name", name);
-					levels.appendChild(level);
+					froms.remove(0);
+					names.remove(0);
 				}
 				
-				Element entries = doc.createElement("Entries");
-				rootElement.appendChild(entries);
-				
-				ArrayList<String> prevValues = new ArrayList<String>(Collections.nCopies(froms.size(), (String)null));
-				List<Element> elements = new ArrayList<Element>(Collections.nCopies(froms.size(), (Element)null));
-				for(Integer row : rowsWithInfo)
+				for(String stateName : stateNames)
 				{
-					//Check which values have changed
-					boolean hasActualValue = false;
-					for(int i = froms.size() - 1 ; i >= 0 ; --i)
+					String fullPathName = fileName.getPath();
+					if (stateName.isEmpty() == false)
+						fullPathName = fullPathName.replace(".xml", "-" + stateName + ".xml");
+					File xmlFilename = new File(fullPathName);
+	
+					DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
+					DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
+	
+					// root elements
+					Document doc = docBuilder.newDocument();
+					Element rootElement = doc.createElement("MultiLayerDictionary");
+					doc.appendChild(rootElement);
+					rootElement.setAttribute("type", dataType.name());
+					rootElement.setAttribute("defaultSearchFlags", defaultSearchFlags);
+					
+	
+					Element levels = doc.createElement("Levels");
+					rootElement.appendChild(levels);
+					for(String name : names)
 					{
-						String value = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(froms.get(i)));
-						if (value.equals(prevValues.get(i)) == false)
-						{
-							hasActualValue |= !value.isEmpty();
-							if (hasActualValue)
-								prevValues.set(i, value);
-							else prevValues.set(i, null);
-							elements = elements.subList(0, i);
-						}
+						Element level = doc.createElement("Level");
+						level.setAttribute("name", name);
+						levels.appendChild(level);
 					}
 					
-					//Add the new values to the 
+					Element entries = doc.createElement("Entries");
+					rootElement.appendChild(entries);
 					
-					Element lastEntryToBeAdded = null;
-					for(int i = elements.size() ; i <  froms.size() ; ++i)
+					ArrayList<String> prevValues = new ArrayList<String>(Collections.nCopies(froms.size(), (String)null));
+					List<Element> elements = new ArrayList<Element>(Collections.nCopies(froms.size(), (Element)null));
+					for(Integer row : rowsWithInfo)
 					{
-						if (prevValues.get(i) != null)
+						if (hasStates == true)
 						{
-							Element entry = doc.createElement("Entry");
-							entry.setAttribute("name", prevValues.get(i));
-							
-							Element parent = i == 0 ? entries : elements.get(i - 1);
-							parent.appendChild(entry);
-							elements.add(entry);
-							lastEntryToBeAdded = entry;
+							String rowStateName = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get("State"));
+							if (!stateName.equals(rowStateName))
+								continue;
 						}
-					}
-					
-					if (lastEntryToBeAdded != null)
-					{
-						String tmpVal;
-						tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_ALTERNATIVE_NAME));
-						if (tmpVal.isEmpty() == false)
-							lastEntryToBeAdded.setAttribute("standAloneNames", tmpVal);
-						tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_FLAGS));
-						if (tmpVal.isEmpty() == false)
-							lastEntryToBeAdded.setAttribute("flags", tmpVal);
-						if (dataType == MldEntryType.Location)
+						
+						//Check which values have changed
+						for(int i = froms.size() - 1 ; i >= 0 ; --i)
 						{
-							try {
-							tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_LONGITUDE));
-							if (tmpVal.isEmpty() == false)
-								lastEntryToBeAdded.setAttribute("longitude", String.format("%.4f", Double.valueOf(tmpVal)));
-							tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_LATITUDE));
-							if (tmpVal.isEmpty() == false)
-								lastEntryToBeAdded.setAttribute("latitude", String.format("%.4f", Double.valueOf(tmpVal)));
-							}
-							catch(Throwable e)
+							String value = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(froms.get(i)));
+							if (value.isEmpty()) value = null;
+							if (Objects.equal(value, prevValues.get(i)) == false)
 							{
-								System.out.println("Unable to write long lat");
+								prevValues.set(i, value);
+								elements = elements.subList(0, i);
 							}
 						}
-							
-						/*if (dataType == MldDataType.Location)
+						
+						//Add the new values to the 
+						
+						Element lastEntryToBeAdded = null;
+						for(int i = elements.size() ; i <  froms.size() ; ++i)
 						{
-							String cmlValue = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_COUNTRY_REGION));
-							if (cmlValue.isEmpty() == false)
-								lastEntryToBeAdded.setAttribute("majorCity", cmlValue);
-						}*/
+							if (prevValues.get(i) != null)
+							{
+								Element entry = doc.createElement("Entry");
+								entry.setAttribute("name", prevValues.get(i));
+								
+								Element parent = i == 0 ? entries : elements.get(i - 1);
+								parent.appendChild(entry);
+								elements.add(entry);
+								lastEntryToBeAdded = entry;
+							}
+						}
+						
+						if (lastEntryToBeAdded != null)
+						{
+							String tmpVal;
+							tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_ALTERNATIVE_NAME));
+							if (tmpVal.isEmpty() == false)
+								lastEntryToBeAdded.setAttribute("standAloneNames", tmpVal);
+							tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_FLAGS));
+							if (tmpVal.isEmpty() == false)
+								lastEntryToBeAdded.setAttribute("flags", tmpVal);
+							if (dataType == MldEntryType.Location)
+							{
+								try {
+								tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_LONGITUDE));
+								if (tmpVal.isEmpty() == false)
+									lastEntryToBeAdded.setAttribute("longitude", String.format("%.4f", Double.valueOf(tmpVal)));
+								tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_LATITUDE));
+								if (tmpVal.isEmpty() == false)
+									lastEntryToBeAdded.setAttribute("latitude", String.format("%.4f", Double.valueOf(tmpVal)));
+								}
+								catch(Throwable e)
+								{
+									System.out.println("Unable to write long lat");
+								}
+							}
+								
+							/*if (dataType == MldDataType.Location)
+							{
+								String cmlValue = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_COUNTRY_REGION));
+								if (cmlValue.isEmpty() == false)
+									lastEntryToBeAdded.setAttribute("majorCity", cmlValue);
+							}*/
+						}
 					}
-				}
-				
-				// write the content into xml file
-				TransformerFactory transformerFactory = TransformerFactory.newInstance();
-				Transformer transformer = transformerFactory.newTransformer();
-				DOMSource source = new DOMSource(doc);
-				StreamResult result = new StreamResult(new PrintStream(xmlFilename));
-				transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-				transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
-				transformer.transform(source, result);
+						
+					// write the content into xml file
+					TransformerFactory transformerFactory = TransformerFactory.newInstance();
+					Transformer transformer = transformerFactory.newTransformer();
+					DOMSource source = new DOMSource(doc);
+					StreamResult result = new StreamResult(new PrintStream(xmlFilename));
+					transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+					transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
+					transformer.transform(source, result);
+				}		
 				
 				//Reupdate the row numbering
 				if (mainHeader.get(COLUMN_ORIG_ROW) != null)

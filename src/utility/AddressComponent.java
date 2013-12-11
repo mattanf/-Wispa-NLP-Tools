@@ -29,6 +29,10 @@ public class AddressComponent {
 	public static final AddressComponent acPark = new AddressComponent("park", "indicates a named park.");
 	public static final AddressComponent acInterentPoint = new AddressComponent("point_of_interest", "indicates a named point of interest. Typically, these \"POI\"s are prominent local entities that don't easily fit in another category such as \"Empire State Building\" or \"Statue of Liberty.\"");
 	
+	public static final AddressComponent acSynagogue = new AddressComponent("synagogue", "");
+	public static final AddressComponent acChurch = new AddressComponent("church","");
+	public static final AddressComponent acEstablishment = new AddressComponent("establishment", "");
+	
 	private String name;
 	private String description;
 	

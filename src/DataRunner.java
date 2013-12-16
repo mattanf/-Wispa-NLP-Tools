@@ -197,29 +197,24 @@ public class DataRunner {
 		}
 
 		if (args.length - fileIndex == 0) {
-			System.out.println("Usage: [XLS/X source file] {XLS/X output file}");
+			System.out.println("Usage: [XLS/X source file]");
 		} else {
+			fileIndex = args.length - 1;
 			File sourceFile = new File(args[fileIndex]);
 
 			if ((args[fileIndex].toLowerCase().endsWith(".xls") == false) &&
 					(args[fileIndex].toLowerCase().endsWith(".xlsx") == false))
 				System.err.println("Error: Specified input file '" + args[fileIndex] + "' is not a xls/x file.");
-			if ((args.length > fileIndex + 1) &&
-					((args[fileIndex + 1].toLowerCase().endsWith(".xls") == false) && (args[fileIndex + 1]
-							.toLowerCase().endsWith(".xlsx") == false)))
-				System.err.println("Error: Specified output file '" + args[fileIndex + 1] + "' is not a xls/x file.");
 			else if (!sourceFile.isFile() || !sourceFile.exists())
 				System.err.println("Error: Specified file '" + args[fileIndex] + "' could not be read.");
 			else {
 				String secondaryFileName = args[fileIndex];
-				if (connectToLocalServer);
-					connectToLocalServer();
+				if (connectToLocalServer)
+					connectToLocalServer = connectToLocalServer();
 				GeocodeQuerier.instance().setEnableGoogleQuerying(connectToLocalServer);
 				secondaryFileName = extendFileName(secondaryFileName, "-compiled");
 				File targetFile = new File(secondaryFileName);
-				if (args.length > fileIndex + 1)
-					targetFile = new File(args[fileIndex + 1]);
-
+				
 				cellStyles = new HashMap<>();
 				System.out.println("Started parse process");
 				datastoreHelper.setUp();
@@ -236,17 +231,25 @@ public class DataRunner {
 
 	
 	
-    public static void connectToLocalServer() throws IOException  {
-        String username = "mattanf@gmail.com";//System.console().readLine("username: ");
-        String password = "some_pass";
-         //   new String(System.console().readPassword("password: "));
-        RemoteApiOptions options = new RemoteApiOptions()
-            //.server("wispa-test.appspot.com", 443)
-        	.server("localhost", 8888)
-            .credentials(username, password);
-        RemoteApiInstaller installer = new RemoteApiInstaller();
-        installer.install(options);
-        options.reuseCredentials(username, installer.serializeCredentials());
+    public static boolean connectToLocalServer() throws IOException  {
+        try {
+	    	String username = "mattanf@gmail.com";//System.console().readLine("username: ");
+	        String password = "some_pass";
+	         //   new String(System.console().readPassword("password: "));
+	        RemoteApiOptions options = new RemoteApiOptions()
+	            //.server("wispa-test.appspot.com", 443)
+	        	.server("localhost", 8888)
+	            .credentials(username, password);
+	        RemoteApiInstaller installer = new RemoteApiInstaller();
+	        installer.install(options);
+	        options.reuseCredentials(username, installer.serializeCredentials());
+        }
+        catch (Throwable e)
+        {
+        	Logger.getGlobal().severe("Could not connect to server. Location will not be extracted fully");
+        	return false;
+        }
+        return true;
     }
 	private static String extendFileName(String fileName, String extention) {
 		int delimPer = fileName.lastIndexOf('.');
@@ -782,9 +785,9 @@ public class DataRunner {
 			ApiProxy.setEnvironmentForCurrentThread(testEnvironment);
 
 			parser = new MessageParser();
-			if (connectToLocalServer);
+			if (connectToLocalServer)
 				try {
-					connectToLocalServer();
+					connectToLocalServer = connectToLocalServer();
 				} catch (IOException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
@@ -911,14 +914,14 @@ public class DataRunner {
 	private static void gatherColumnsFromOutputData(Map<String, Integer> expectedHeaders, PostData inData,
 			PostData outData, Workbook wb, int headerRowNum, int expectedHeadersOffset) {
 		if (outData != null) {
-			Iterable<Entry<String, Variant>> itr = outData.getFieldSet();
-			for(Entry<String, Variant> ent : itr) {
-				if ((expectedHeaders.containsKey(ent.getKey()) == false) &&
-						(inData.getField(ent.getKey()) == null)) {
+			Iterable<String> itr = outData.getFieldNamesSet();
+			for(String ent : itr) {
+				if ((expectedHeaders.containsKey(ent) == false) &&
+						(inData.getField(ent) == null)) {
 					Cell headerCell = getCell(wb, 0, headerRowNum, expectedHeadersOffset + expectedHeaders.size(), true);
 					if (headerCell != null)
-						headerCell.setCellValue(ent.getKey());
-					expectedHeaders.put(ent.getKey(), expectedHeadersOffset + expectedHeaders.size());
+						headerCell.setCellValue(ent);
+					expectedHeaders.put(ent, expectedHeadersOffset + expectedHeaders.size());
 				}
 			}
 		}
@@ -950,7 +953,8 @@ public class DataRunner {
 			if (isOrigMessageProperty(fieldName)) {
 				try {
 					String val = getCellString(wb, 0, readRowNum, next.getValue());
-					postData.addField(fieldName, null, val);
+					if (val.isEmpty() == false)
+						postData.addField(fieldName, null, val);
 				} catch (Exception e) {
 				}
 			}

@@ -682,6 +682,7 @@ public class MldDictionaryWriter {
 					}
 						
 					// write the content into xml file
+					xmlFilename.delete();
 					TransformerFactory transformerFactory = TransformerFactory.newInstance();
 					Transformer transformer = transformerFactory.newTransformer();
 					DOMSource source = new DOMSource(doc);

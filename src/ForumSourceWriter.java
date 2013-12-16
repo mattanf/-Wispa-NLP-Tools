@@ -81,9 +81,9 @@ public class ForumSourceWriter {
 			return false;
 		} else {
 			
-			String sourceFilePath = "ForumSources.xml";
-			if (inputFile.getParent() != null)
-				sourceFilePath = inputFile.getParent() + "\\" + sourceFilePath;
+			String sourceFilePath = "..\\FBAds-Server\\war\\ReferenceData\\ForumSources.xml";
+			//if (inputFile.getParent() != null)
+			//	sourceFilePath = inputFile.getParent() + "\\" + sourceFilePath;
 			return exportToXML(wb, mainSheet, mainHeader, mainHeaderRow, new File(sourceFilePath));
 		}
 	}
@@ -144,6 +144,7 @@ public class ForumSourceWriter {
 					for (PostFieldType fieldType : PostFieldType.values()) {
 						if ((fieldType.getPersistency() == Persistency.Source) &&
 								(mainHeader.containsKey(fieldType.name())))
+							//if (fieldType.name().equals("ForumLocationRegion"))
 							isSuccessful &= moveNodeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, fieldType, false);
 					}
 				}

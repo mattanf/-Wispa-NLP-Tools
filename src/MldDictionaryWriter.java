@@ -91,18 +91,27 @@ public class MldDictionaryWriter {
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		File inputFile = new File(args.length == 0 ? "" : args[0]);
 		if (args.length == 0)
-			System.out.println("Usage: [XLS/X source file]");
-		else if (!inputFile.exists())
-			System.out.println("File " + inputFile.getName() + " could not be found.");
-		else if (!inputFile.canWrite() || !inputFile.canRead())
-			System.out.println("File " + inputFile.getName() + " is not writable.");
-		else {
-			processFile(inputFile);
-			System.out.println("Work Finished.");
+		{
+			processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationGB.xlsx"));
+			processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationUS.xlsx"));
+			processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationUS-NY.xlsx"));
+			
 		}
-
+		else
+		{
+			File inputFile = new File(args.length == 0 ? "" : args[0]);
+			if (args.length == 0)
+				System.out.println("Usage: [XLS/X source file]");
+			else if (!inputFile.exists())
+				System.out.println("File " + inputFile.getName() + " could not be found.");
+			else if (!inputFile.canWrite() || !inputFile.canRead())
+				System.out.println("File " + inputFile.getName() + " is not writable.");
+			else {
+				processFile(inputFile);
+				System.out.println("Work Finished.");
+			}
+		}
 	}
 
 	private static void processFile(File inputFile) {
@@ -138,6 +147,12 @@ public class MldDictionaryWriter {
 					addColumnToHeader(mainHeader, COLUMN_IS_PROCESSED);
 					hasUpdated = updateGeoDataInExcel(wb, mainSheet, mainHeader, mainHeaderRow);
 				}
+				if (hasUpdated)
+				{
+					XLSUtil.saveXLS(wb, inputFile);
+					return;
+				}
+				
 				hasUpdated |= updateClosestMajorCity(wb, mainSheet, mainHeader, mainHeaderRow);
 			}
 			
@@ -191,9 +206,9 @@ public class MldDictionaryWriter {
 			String location = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_LOCATION));
 			String isProcessed = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_IS_PROCESSED));
 			// Check if row needs to be written
-			if ((calculatedLoc.get(location) != null) && (Boolean.valueOf(isProcessed) == false))
+			if ((calculatedLoc.get(location) != null) && ((isProcessed.isEmpty() || isProcessed.equalsIgnoreCase("false"))))
 				setCellByHeader(wb, mainSheet, mainRow, mainHeader, COLUMN_IS_PROCESSED, "Already calculated (" + Integer.toString(calculatedLoc.get(location) + 1) + ")");
-			else if ((location.isEmpty() == false) && (Boolean.valueOf(isProcessed) == false)) {
+			else if ((location.isEmpty() == false) && ((isProcessed.isEmpty() || isProcessed.equalsIgnoreCase("false")))) {
 				List<GeocoderResult> queryRes = geoQuerier.makeQuery(location);
 				if (queryRes == null)
 				{

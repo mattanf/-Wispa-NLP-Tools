@@ -17,6 +17,7 @@ import org.apache.poi.xssf.usermodel.XSSFCellStyle;
 import org.apache.poi.xssf.usermodel.XSSFColor;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -39,6 +40,7 @@ import com.google.appengine.tools.remoteapi.RemoteApiInstaller;
 import com.google.appengine.tools.remoteapi.RemoteApiOptions;
 import com.google.apphosting.api.ApiProxy;
 import com.google.apphosting.api.ApiProxy.Environment;
+import com.pairapp.dataobjects.Comment;
 import com.pairapp.engine.parser.MessageParser;
 import com.pairapp.engine.parser.data.PostData;
 import com.pairapp.engine.parser.data.PostFieldType;
@@ -363,6 +365,7 @@ public class DataRunner {
 			HashMap<String, Integer> outputHeaders, TreeMap<String, HashMap<String, Integer>> resultCount) {
 		String messageStr = getCellString(wb, 0, readRowNum, 0);
 		if (messageStr.isEmpty() == false) {
+			
 			String isValidString = metaDataHeaders.containsKey("PostIsValid") ? getCellString(wb, 0, readRowNum, metaDataHeaders.get("PostIsValid")) : "True";
 			boolean isValid = Boolean.valueOf(isValidString);
 			String purposeString =  metaDataHeaders.containsKey("PostPurpose") ? getCellString(wb, 0, readRowNum,
@@ -708,6 +711,15 @@ public class DataRunner {
 
 			PostData inputData = generateInitialePostData(wb, readRowNum, metaDataHeaders);
 			inputData.setOriginalMessageText(messageStr);
+			if (metaDataHeaders.get("Comments") != null)
+			{
+				String comments = getCellString(wb, 0, readRowNum, metaDataHeaders.get("Comments"));
+				if (comments.isEmpty() == false)
+				{
+					inputData.setComments(new ArrayList<Comment>(Arrays.asList(new Comment(null,inputData.getFieldValueString(PostFieldType.PostPublisherId),comments, null, true))));
+				}
+			}
+			
 			
 			/*inputData = new PostData();
 			inputData.addField(PostFieldType.PostPublisherId, "582793141782660");
@@ -930,6 +942,8 @@ public class DataRunner {
 	private static PostData generateInitialePostData(Workbook wb, int readRowNum, Map<String, Integer> metaDataHeaders)
 			throws IOException {
 		PostData postData = basePostData.shalowClone();
+		if (!postData.hasDefinedValue(PostFieldType.PostPublisherId))
+			postData.addField(PostFieldType.PostPublisherId, "TestPublisher");
 		if (!postData.hasDefinedValue(PostFieldType.BillboardId))
 			postData.addField(PostFieldType.BillboardId,
 					VariantEnum.generateInstance(VariantTypeEnums.Billboard.Facebook));

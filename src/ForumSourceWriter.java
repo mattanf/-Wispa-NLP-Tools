@@ -6,8 +6,8 @@ import org.w3c.dom.Element;
 
 import com.google.appengine.labs.repackaged.com.google.common.base.Objects;
 import com.pairapp.datalayer.SourcesDatalayer;
+import com.pairapp.dataobjects.ForumPrivacy;
 import com.pairapp.dataobjects.ForumSource;
-import com.pairapp.dataobjects.ForumSource.ForumPrivacy;
 import com.pairapp.engine.parser.data.PostFieldType;
 import com.pairapp.engine.parser.data.VariantEnum;
 import com.pairapp.engine.parser.data.PostFieldType.Persistency;
@@ -172,7 +172,6 @@ public class ForumSourceWriter {
 					for (PostFieldType fieldType : PostFieldType.values()) {
 						if ((fieldType.getPersistency() == Persistency.Source) &&
 								(mainHeader.containsKey(fieldType.name()))) {
-							//if (fieldType.name().equals("ForumLocationRegion"))
 							if (XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name())).isEmpty() == false)
 								forumSource.setProperty(fieldType.name(), XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name())));
 							isSuccessful &= moveNodeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, fieldType, false);
@@ -191,6 +190,14 @@ public class ForumSourceWriter {
 					if (isValid)
 					{
 						rootElement.appendChild(srcElement);
+					}
+				}
+				else
+				{
+					if (Objects.equal(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE)), "Disabled") == false)
+					{
+						XLSUtil.setCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE), "Disabled");
+						hasExcelChanged = true;
 					}
 				}
 				++mainRow;

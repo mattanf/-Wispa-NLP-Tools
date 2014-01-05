@@ -9,6 +9,8 @@ import com.pairapp.datalayer.ConfigurationDatalayer.ConfigSourceType;
 import com.pairapp.engine.parser.ParseGlobalData;
 import com.pairapp.engine.parser.PhraseRepository;
 import com.pairapp.engine.parser.PhraseRepositoryDataProviderXml;
+import com.pairapp.engine.parser.data.PostData;
+import com.pairapp.engine.parser.data.PostFieldType;
 
 public class PhrasePrinter {
 
@@ -35,6 +37,9 @@ public class PhrasePrinter {
 			PhraseRepository retRepo = new PhraseRepository();
 			success &= retRepo.init(dataProvider, true);
 			ParseGlobalData rep = new ParseGlobalData(retRepo);
+			PostData pd = new PostData();
+			pd.addField(PostFieldType.ForumLocationCountry, "GB");
+			pd.addField(PostFieldType.ForumLanguage, "en");
 			
 			if (success == true)
 			{

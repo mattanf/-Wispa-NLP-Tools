@@ -3,9 +3,15 @@ import java.io.PrintStream;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+
+import com.google.appengine.labs.repackaged.com.google.common.base.Objects;
+import com.pairapp.datalayer.SourcesDatalayer;
+import com.pairapp.dataobjects.ForumSource;
+import com.pairapp.dataobjects.ForumSource.ForumPrivacy;
 import com.pairapp.engine.parser.data.PostFieldType;
 import com.pairapp.engine.parser.data.VariantEnum;
 import com.pairapp.engine.parser.data.PostFieldType.Persistency;
+import com.pairapp.engine.parser.data.VariantTypeEnums.Billboard;
 import com.pairapp.utilities.LogLineFormatter;
 
 import utility.XLSUtil;
@@ -24,7 +30,8 @@ import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
-
+import com.google.appengine.tools.development.testing.LocalDatastoreServiceTestConfig;
+import com.google.appengine.tools.development.testing.LocalServiceTestHelper;
 public class ForumSourceWriter {
 
 	final static String COLUMN_ORDER = "Order";
@@ -38,12 +45,17 @@ public class ForumSourceWriter {
 	final static String COLUMN_OWNER = "Owner";
 	final static String COLUMN_DESCRIPTION = "Description";
 	final static String COLUMN_ENABLED = "Enabled";
+	final static String COLUMN_PARSER_MESSAGE = "Parser Message";
+	static boolean doWriteXmlFile = false;
+	
+	private static final LocalServiceTestHelper datastoreHelper = new LocalServiceTestHelper(
+			new LocalDatastoreServiceTestConfig());
 	
 	/**
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		File inputFile = new File(args.length == 0 ? "" : args[0]);
+		File inputFile = new File(args.length == 0 ? "" : args[args.length - 1]);
 		if (args.length == 0)
 			System.out.println("Usage: [XLS/X source file]");
 		else if (!inputFile.exists())
@@ -59,7 +71,10 @@ public class ForumSourceWriter {
 			Logger.getGlobal().setLevel(Level.INFO);
 			
 			Logger.getGlobal().info("Work Started.");
+			datastoreHelper.setUp();
+			doWriteXmlFile = Arrays.asList(args).contains("-w");
 			boolean isSuccessful = processFile(inputFile);
+			datastoreHelper.tearDown();
 			Logger.getGlobal().info("Work " + (isSuccessful ? "finished successfully." : "failed."));
 		}
 
@@ -76,24 +91,31 @@ public class ForumSourceWriter {
 		int mainHeaderRow = XLSUtil.getHeaderRow(wb, mainSheet, mainHeader, COLUMN_ID, COLUMN_BILLBOARD,
 				COLUMN_PRIVACY, COLUMN_NAME, COLUMN_ENABLED);
 		
+		
 		if (mainHeaderRow == -1) {
 			Logger.getGlobal().info("Severe Started.");
 			return false;
 		} else {
 			
-			String sourceFilePath = "..\\FBAds-Server\\war\\ReferenceData\\ForumSources.xml";
+			if (mainHeader.get(COLUMN_PARSER_MESSAGE) == null)
+			{
+				XLSUtil.addColumnToHeader(mainHeader, COLUMN_PARSER_MESSAGE);
+				XLSUtil.updateHeader(wb, mainSheet, mainHeaderRow, mainHeader);
+			}
+			
+			String sourceFilePath = "ReferenceData\\ForumSources.xml";
 			//if (inputFile.getParent() != null)
 			//	sourceFilePath = inputFile.getParent() + "\\" + sourceFilePath;
-			return exportToXML(wb, mainSheet, mainHeader, mainHeaderRow, new File(sourceFilePath));
+			return exportToXML(wb, mainSheet, mainHeader, mainHeaderRow, new File(sourceFilePath), inputFile);
 		}
 	}
 
 	private static boolean exportToXML(final Workbook wb, final int mainSheet, final Map<String, Integer> mainHeader,
-			int mainHeaderRow, File fileName) {
+			int mainHeaderRow, File xmlFileName, File xlsFile) {
 		boolean isSuccessful = true;
 		// Scan the list of xml levels
 		int mainRow = mainHeaderRow + 1;
-
+		boolean hasExcelChanged = false;
 		try {
 			DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
 			DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
@@ -131,7 +153,6 @@ public class ForumSourceWriter {
 				if (Boolean.valueOf(enabled) == true)
 				{
 					Element srcElement = doc.createElement("Source");
-					rootElement.appendChild(srcElement);
 					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_ID, true);
 					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_BILLBOARD, true);
 					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_PRIVACY, true);
@@ -140,23 +161,50 @@ public class ForumSourceWriter {
 					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_OWNER, false);
 					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_DESCRIPTION, false);
 					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_ENABLED, false);
-	
+					
+					ForumSource forumSource = new ForumSource(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ID)),
+							XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_NAME)),
+							Billboard.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_BILLBOARD))),
+							XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_LINK)),
+							XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_OWNER)),
+							ForumPrivacy.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PRIVACY))));
+					
 					for (PostFieldType fieldType : PostFieldType.values()) {
 						if ((fieldType.getPersistency() == Persistency.Source) &&
-								(mainHeader.containsKey(fieldType.name())))
+								(mainHeader.containsKey(fieldType.name()))) {
 							//if (fieldType.name().equals("ForumLocationRegion"))
+							if (XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name())).isEmpty() == false)
+								forumSource.setProperty(fieldType.name(), XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name())));
 							isSuccessful &= moveNodeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, fieldType, false);
+						}
+					}
+					StringBuilder message = new StringBuilder();
+					boolean isValid = SourcesDatalayer.validateSource(message, forumSource, false);
+					String parserMessage = isValid ? "OK" : message.toString();
+					if (Objects.equal(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE)), parserMessage) == false)
+					{
+						XLSUtil.setCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE), parserMessage);
+						hasExcelChanged = true;
+					}
+					
+					//Add the information of the source to the xml
+					if (isValid)
+					{
+						rootElement.appendChild(srcElement);
 					}
 				}
 				++mainRow;
 				
 			}
 
-			if (isSuccessful == true) {
+			if (hasExcelChanged)
+				XLSUtil.saveXLS(wb, xlsFile);
+			
+			if (isSuccessful == true && doWriteXmlFile) {
 
 				Logger.getGlobal().info("Beginning to write XML file.");
 				
-				File xmlFilename = new File(fileName.getPath());
+				File xmlFilename = new File(xmlFileName.getPath());
 
 				// write the content into xml file
 				TransformerFactory transformerFactory = TransformerFactory.newInstance();

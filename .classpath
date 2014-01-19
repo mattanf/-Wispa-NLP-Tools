@@ -20,5 +20,10 @@
 	<classpathentry kind="lib" path="../FBAds-Dependencies/dom4j-1.6.1/dom4j-1.6.1.jar"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/FBAds-Server"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="lib" path="C:/Program Files/Eclipse/plugins/com.google.appengine.eclipse.sdkbundle_1.8.3/appengine-java-sdk-1.8.3/lib/opt/user/datanucleus/v1/jdo2-api-2.3-eb.jar">
+		<attributes>
+			<attribute name="javadoc_location" value="file:/C:/Program%20Files/Eclipse/plugins/com.google.appengine.eclipse.sdkbundle_1.8.3/appengine-java-sdk-1.8.3/docs/javadoc/"/>
+		</attributes>
+	</classpathentry>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

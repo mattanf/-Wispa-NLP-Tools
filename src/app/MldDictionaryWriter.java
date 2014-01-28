@@ -94,9 +94,10 @@ public class MldDictionaryWriter {
 	public static void main(String[] args) {
 		if (args.length == 0)
 		{
-			processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationGB.xlsx"));
-			processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationUS.xlsx"));
-			processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationUS-NY.xlsx"));
+			processFile(new File("C:\\Research\\work\\placesUS.xlsx"));
+			//processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationGB.xlsx"));
+			//processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationUS.xlsx"));
+			//processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationUS-NY.xlsx"));
 			
 		}
 		else

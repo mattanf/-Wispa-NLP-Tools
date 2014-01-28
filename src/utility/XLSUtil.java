@@ -80,8 +80,9 @@ public class XLSUtil {
 					return Double.toString(val);
 
 			case Cell.CELL_TYPE_STRING:
-				return cell.getStringCellValue().trim();
-				// case Cell.CELL_TYPE_FORMULA: return cell.getCellFormula();
+				String str =  cell.getStringCellValue().trim();
+				str = str.replace("\\u00a0", " ");
+				return str;
 			case Cell.CELL_TYPE_BOOLEAN:
 				return Boolean.toString(cell.getBooleanCellValue());
 			default:

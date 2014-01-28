@@ -16,7 +16,7 @@ import com.google.code.geocoder.model.GeocoderStatus;
 public class GoogleGeocodeQuerier {
 	
 	final static private Geocoder geocoder = new Geocoder();
-
+	
 	double sleepTimeBetweenQueries = 0;
 	int queryErrorCount = 0;
 	String language;

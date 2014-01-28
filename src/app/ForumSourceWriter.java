@@ -12,6 +12,8 @@ import com.pairapp.engine.parser.data.PostFieldType;
 import com.pairapp.engine.parser.data.VariantEnum;
 import com.pairapp.engine.parser.data.PostFieldType.Persistency;
 import com.pairapp.engine.parser.data.VariantTypeEnums.Billboard;
+import com.pairapp.engine.parser.data.VariantTypeEnums.Category;
+import com.pairapp.engine.parser.data.VariantTypeEnums.Country;
 import com.pairapp.utilities.LogLineFormatter;
 
 import utility.XLSUtil;
@@ -46,6 +48,7 @@ public class ForumSourceWriter {
 	final static String COLUMN_OWNER = "Owner";
 	final static String COLUMN_DESCRIPTION = "Description";
 	final static String COLUMN_ENABLED = "Enabled";
+	final static String COLUMN_PROVISIONING_GROUP = "ProvisioningGroup";
 	final static String COLUMN_PARSER_MESSAGE = "Parser Message";
 	static boolean doWriteXmlFile = false;
 	
@@ -128,6 +131,7 @@ public class ForumSourceWriter {
 		redundentColumns.remove(COLUMN_OWNER);
 		redundentColumns.remove(COLUMN_DESCRIPTION);
 		redundentColumns.remove(COLUMN_ENABLED);
+		redundentColumns.remove(COLUMN_PROVISIONING_GROUP);
 		for (PostFieldType fieldType : PostFieldType.values())
 			if (fieldType.getPersistency() == Persistency.Source)
 					redundentColumns.remove(fieldType.name());
@@ -142,10 +146,12 @@ public class ForumSourceWriter {
 			boolean isProvisioningEnabled = Boolean.valueOf(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ENABLED)));
 			if (isProvisioningEnabled == true)
 			{
+				String provisioningGroup = extractProvisioningGroupFromWorkbook(wb, mainSheet, mainHeader, mainRow);
+				
 				ForumSource forumSource = new ForumSource(Billboard.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_BILLBOARD))),
 						XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ID)),
 						XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_NAME)),							
-						com.pairapp.dataobjects.ForumPrivacy.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PRIVACY))));
+						com.pairapp.dataobjects.ForumPrivacy.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PRIVACY))),provisioningGroup);
 				
 				forumSource.setIsProvisionEnabled(isProvisioningEnabled);
 				
@@ -171,6 +177,9 @@ public class ForumSourceWriter {
 				{
 					retSources.add(forumSource);
 				}
+				else {
+					Logger.getGlobal().severe("Source " + forumSource + ":" + parserMessage);
+				}
 			}
 			else
 			{
@@ -190,6 +199,35 @@ public class ForumSourceWriter {
 		return retSources;
 		
 
+	}
+
+	/**
+	 * @param wb
+	 * @param mainSheet
+	 * @param mainHeader
+	 * @param mainRow
+	 * @return
+	 */
+	private static String extractProvisioningGroupFromWorkbook(Workbook wb, int mainSheet,
+			Map<String, Integer> mainHeader, int mainRow) {
+		String provisioningGroup = null;
+		if (mainHeader.get(COLUMN_PROVISIONING_GROUP) != null)
+			provisioningGroup = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PROVISIONING_GROUP));
+		if (provisioningGroup == null)
+		{
+			Category category = Category.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(PostFieldType.ForumCategory.name())));
+			Country country = Country.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(PostFieldType.ForumLocationCountry.name())));
+			if ((country != null) && (category != null))
+			{
+				String categoryString = category.name();
+				if ((category == Category.Electronics) || (category == Category.Phone)|| (category == Category.VideoGaming))
+					categoryString = "Gadgets";
+			
+				provisioningGroup = categoryString + country.name();
+			}
+			
+		}
+		return provisioningGroup;
 	}
 	
 	
@@ -269,10 +307,11 @@ public class ForumSourceWriter {
 					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_DESCRIPTION, false);
 					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_ENABLED, false);
 					
+					String provisioningGroup = extractProvisioningGroupFromWorkbook(wb, mainSheet, mainHeader, mainRow);
 					ForumSource forumSource = new ForumSource(Billboard.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_BILLBOARD))),
 							XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ID)),
 							XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_NAME)),							
-							com.pairapp.dataobjects.ForumPrivacy.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PRIVACY))));
+							com.pairapp.dataobjects.ForumPrivacy.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PRIVACY))), provisioningGroup);
 					//ForumSource forumSource = new ForumSource(
 					//		XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ID)),
 					//		XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_NAME)),	

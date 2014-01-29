@@ -133,7 +133,8 @@ public class ForumSourceWriter {
 		redundentColumns.remove(COLUMN_ENABLED);
 		redundentColumns.remove(COLUMN_PROVISIONING_GROUP);
 		for (PostFieldType fieldType : PostFieldType.values())
-			if (fieldType.getPersistency() == Persistency.Source)
+			if ((fieldType.getPersistency() == Persistency.Source) || 
+					(fieldType.getPersistency() == Persistency.SourceAssociated))
 					redundentColumns.remove(fieldType.name());
 		if (redundentColumns.isEmpty() == false)
 		{
@@ -279,7 +280,7 @@ public class ForumSourceWriter {
 			redundentColumns.remove(COLUMN_DESCRIPTION);
 			redundentColumns.remove(COLUMN_ENABLED);
 			for (PostFieldType fieldType : PostFieldType.values())
-				if (fieldType.getPersistency() == Persistency.Source)
+				if ((fieldType.getPersistency() == Persistency.Source) || (fieldType.getPersistency() == Persistency.SourceAssociated))
 						redundentColumns.remove(fieldType.name());
 			if (redundentColumns.isEmpty() == false)
 			{

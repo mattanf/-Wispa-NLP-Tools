@@ -6,12 +6,14 @@ import java.io.PrintStream;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 
 import com.google.appengine.labs.repackaged.com.google.common.base.Objects;
 import com.google.code.geocoder.model.GeocoderAddressComponent;
 import com.google.code.geocoder.model.GeocoderResult;
 import com.google.code.geocoder.model.LatLng;
 import com.google.gwt.dev.util.collect.HashSet;
+import com.pairapp.engine.parser.data.VariantTypeEnums.CountryState;
 
 import utility.AddressComponent;
 import utility.GoogleGeocodeQuerier;
@@ -25,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.logging.Logger;
 import java.util.TreeMap;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -94,7 +97,7 @@ public class MldDictionaryWriter {
 	public static void main(String[] args) {
 		if (args.length == 0)
 		{
-			processFile(new File("C:\\Research\\work\\placesUS.xlsx"));
+			processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\placesUS.xlsx"));
 			//processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationGB.xlsx"));
 			//processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationUS.xlsx"));
 			//processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationUS-NY.xlsx"));
@@ -157,12 +160,46 @@ public class MldDictionaryWriter {
 				
 				hasUpdated |= updateClosestMajorCity(wb, mainSheet, mainHeader, mainHeaderRow);
 			}
-			
-			hasUpdated |= exportToXML(wb, dataType, mainSheet, mainHeader, mainHeaderRow, new File(inputFile.getPath() + ".xml"));
+			Map<String, String> flagedWords = null;
+			if (dataType == MldEntryType.Location)
+			{
+				flagedWords = loadFlagedWordsDictionary(inputFile);
+			}
+			if ((flagedWords != null) || (dataType != MldEntryType.Location))
+				hasUpdated |= exportToXML(wb, dataType, mainSheet, mainHeader, mainHeaderRow, new File(inputFile.getPath() + ".xml"), flagedWords);
 			if (hasUpdated)
 				XLSUtil.saveXLS(wb, inputFile);
 			
 		}
+	}
+
+	private static Map<String, String> loadFlagedWordsDictionary(File inputFile) {
+		Map<String,String> retMap = null;
+		try {
+			File commonWordsFile = new File(inputFile.getParent() + "\\CommonWords.xlsx");
+			Workbook wb = XLSUtil.openXLS(commonWordsFile);
+			Map<String,Integer> wordsHeader = new HashMap<>();
+			int mainRow = getHeaderRow(wb, 0, wordsHeader, "Word", "Flags");
+			if (mainRow != -1)
+			{
+				retMap = new TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER);
+				mainRow = mainRow + 1;
+				while(XLSUtil.isEndRow(wb, mainRow) == false)
+				{
+					String word = XLSUtil.getCellString(wb, 0, mainRow, wordsHeader.get("Word"));
+					String flags = XLSUtil.getCellString(wb, 0, mainRow, wordsHeader.get("Flags"));
+					retMap.put(word, flags);
+					++mainRow;
+				}
+			}
+		}
+		catch(Throwable e)
+		{
+			Logger.getGlobal().severe("Unable to create flaged word dictionary. " + e.getMessage());
+			return null;
+		}
+		
+		return retMap;
 	}
 
 	/**
@@ -501,7 +538,7 @@ public class MldDictionaryWriter {
 	
 
 	private static boolean exportToXML(final Workbook wb, MldEntryType dataType, final int mainSheet, 
-			final Map<String, Integer> mainHeader, int mainHeaderRow, File fileName) {
+			final Map<String, Integer> mainHeader, int mainHeaderRow, File fileName, Map<String, String> flagedWords) {
 		//Find the secondary sheet
 		int xmlSheet = XLSUtil.getOrCreateSheet(wb, "XML Settings", 2);
 		boolean hasDataChanged = false;
@@ -557,12 +594,17 @@ public class MldDictionaryWriter {
 					useRow = containsWordFromListIndex(types, froms) != -1;
 				}
 				
-				if (useRow)
+				if (useRow && hasStates)
 				{
-					rowsWithInfo.add(new Integer(mainRow));
-					if (hasStates)
-						stateNames.add(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get("State")));
+					String stateName = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get("State"));
+					CountryState state = CountryState.toEnum(stateName);
+					if (state != null)
+						stateNames.add(state.name());
+					else useRow = false;
 				}
+				
+				if (useRow)
+					rowsWithInfo.add(new Integer(mainRow));
 				++mainRow;
 			}
 				
@@ -631,31 +673,36 @@ public class MldDictionaryWriter {
 						if (hasStates == true)
 						{
 							String rowStateName = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get("State"));
-							if (!stateName.equals(rowStateName))
+							CountryState rowState = CountryState.toEnum(rowStateName);
+							if ((rowState == null) || (!stateName.equals(rowState.name())))
 								continue;
 						}
 						
 						//Check which values have changed
+						boolean hadPreviousValues = false;
 						for(int i = froms.size() - 1 ; i >= 0 ; --i)
 						{
+							
 							String value = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(froms.get(i)));
-							if (value.isEmpty()) value = null;
+							if (value.isEmpty() && hadPreviousValues == false) value = null;
 							if (Objects.equal(value, prevValues.get(i)) == false)
 							{
+								hadPreviousValues = true;
 								prevValues.set(i, value);
 								elements = elements.subList(0, i);
 							}
 						}
 						
 						//Add the new values to the 
-						
+						String curElementName = null;
 						Element lastEntryToBeAdded = null;
 						for(int i = elements.size() ; i <  froms.size() ; ++i)
 						{
 							if (prevValues.get(i) != null)
 							{
+								curElementName = prevValues.get(i);
 								Element entry = doc.createElement("Entry");
-								entry.setAttribute("name", prevValues.get(i));
+								entry.setAttribute("name", curElementName);
 								
 								Element parent = i == 0 ? entries : elements.get(i - 1);
 								parent.appendChild(entry);
@@ -670,18 +717,23 @@ public class MldDictionaryWriter {
 							tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_ALTERNATIVE_NAME));
 							if (tmpVal.isEmpty() == false)
 								lastEntryToBeAdded.setAttribute("standAloneNames", tmpVal);
-							tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_FLAGS));
+							if (flagedWords != null)
+							{
+								tmpVal = flagedWords.get(curElementName);
+								tmpVal = (tmpVal == null) ? "PH" : tmpVal;
+							}
+							else tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_FLAGS));
 							if (tmpVal.isEmpty() == false)
 								lastEntryToBeAdded.setAttribute("flags", tmpVal);
 							if (dataType == MldEntryType.Location)
 							{
 								try {
-								tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_LONGITUDE));
-								if (tmpVal.isEmpty() == false)
-									lastEntryToBeAdded.setAttribute("longitude", String.format("%.4f", Double.valueOf(tmpVal)));
-								tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_LATITUDE));
-								if (tmpVal.isEmpty() == false)
-									lastEntryToBeAdded.setAttribute("latitude", String.format("%.4f", Double.valueOf(tmpVal)));
+									tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_LONGITUDE));
+									if (tmpVal.isEmpty() == false)
+										lastEntryToBeAdded.setAttribute("longitude", String.format("%.4f", Double.valueOf(tmpVal)));
+									tmpVal = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(COLUMN_LATITUDE));
+									if (tmpVal.isEmpty() == false)
+										lastEntryToBeAdded.setAttribute("latitude", String.format("%.4f", Double.valueOf(tmpVal)));
 								}
 								catch(Throwable e)
 								{
@@ -695,6 +747,17 @@ public class MldDictionaryWriter {
 								if (cmlValue.isEmpty() == false)
 									lastEntryToBeAdded.setAttribute("majorCity", cmlValue);
 							}*/
+						}
+					}
+					
+					//complete flags and coordinates for non-specified locations
+					if (dataType == MldEntryType.Location)
+					{
+						NodeList nl = entries.getChildNodes();
+						for(int nli = 0 ; nli < nl.getLength() ; ++nli)
+						{
+							if ( nl.item(nli) instanceof Element)
+								completeFlagsAndCoordinate((Element)nl.item(nli), flagedWords);
 						}
 					}
 						
@@ -734,6 +797,41 @@ public class MldDictionaryWriter {
 		}
 
 		return hasDataChanged;
+	}
+
+	private static void completeFlagsAndCoordinate(Element item, Map<String, String> flagedWords) {
+		
+		if (item.hasAttribute("flags") == false)
+		{
+			String tmpVal = flagedWords.get(item.getAttribute("name"));
+			tmpVal = (tmpVal == null) ? "PH" : tmpVal;
+			item.setAttribute("flags", tmpVal);
+		}
+		NodeList nl = item.getChildNodes();
+		int locationSourceCount = 0;
+		double latTotal = 0;
+		double lngTotal = 0;
+		for(int nli = 0 ; nli < nl.getLength() ; ++nli)
+		{
+			if ( nl.item(nli) instanceof Element)
+			{
+				Element childElem = (Element) nl.item(nli);
+				completeFlagsAndCoordinate(childElem, flagedWords);
+				if (childElem.hasAttribute("latitude") == true)
+				{
+					++locationSourceCount;
+					latTotal += Double.valueOf(childElem.getAttribute("latitude"));
+					lngTotal += Double.valueOf(childElem.getAttribute("longitude"));
+				}
+			}
+			
+		}
+		if ((latTotal != 0) && (item.hasAttribute("latitude") == false))
+		{
+			item.setAttribute("latitude", String.format("%.4f", latTotal / locationSourceCount));
+			item.setAttribute("longitude", String.format("%.4f", lngTotal / locationSourceCount));
+		}
+		
 	}
 
 	private static String getPreHeaderProperty(Workbook wb, int sheetNum, int headerRow, String propertyName) {

@@ -1,15 +1,11 @@
 package app;
 import java.io.File;
-import java.io.PrintStream;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
 
-import com.google.appengine.labs.repackaged.com.google.common.base.Objects;
+import java.util.Objects;
 import com.pairapp.datalayer.SourcesDatalayer;
 import com.pairapp.dataobjects.ForumSource;
 import com.pairapp.engine.parser.data.PostFieldType;
-import com.pairapp.engine.parser.data.VariantEnum;
 import com.pairapp.engine.parser.data.PostFieldType.Persistency;
 import com.pairapp.engine.parser.data.VariantTypeEnums.Billboard;
 import com.pairapp.engine.parser.data.VariantTypeEnums.Category;
@@ -26,13 +22,6 @@ import java.util.Map;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.transform.OutputKeys;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.stream.StreamResult;
 import com.google.appengine.tools.development.testing.LocalDatastoreServiceTestConfig;
 import com.google.appengine.tools.development.testing.LocalServiceTestHelper;
 public class ForumSourceWriter {
@@ -48,7 +37,6 @@ public class ForumSourceWriter {
 	final static String COLUMN_OWNER = "Owner";
 	final static String COLUMN_DESCRIPTION = "Description";
 	final static String COLUMN_ENABLED = "Enabled";
-	final static String COLUMN_PROVISIONING_GROUP = "ProvisioningGroup";
 	final static String COLUMN_PARSER_MESSAGE = "Parser Message";
 	static boolean doWriteXmlFile = false;
 	
@@ -131,10 +119,8 @@ public class ForumSourceWriter {
 		redundentColumns.remove(COLUMN_OWNER);
 		redundentColumns.remove(COLUMN_DESCRIPTION);
 		redundentColumns.remove(COLUMN_ENABLED);
-		redundentColumns.remove(COLUMN_PROVISIONING_GROUP);
 		for (PostFieldType fieldType : PostFieldType.values())
-			if ((fieldType.getPersistency() == Persistency.Source) || 
-					(fieldType.getPersistency() == Persistency.SourceAssociated))
+			if ((fieldType.getPersistency() == Persistency.Source) || (fieldType.getPersistency() == Persistency.SourceAssociated))
 					redundentColumns.remove(fieldType.name());
 		if (redundentColumns.isEmpty() == false)
 		{
@@ -147,27 +133,38 @@ public class ForumSourceWriter {
 			boolean isProvisioningEnabled = Boolean.valueOf(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ENABLED)));
 			if (isProvisioningEnabled == true)
 			{
-				String provisioningGroup = extractProvisioningGroupFromWorkbook(wb, mainSheet, mainHeader, mainRow);
-				
 				ForumSource forumSource = new ForumSource(Billboard.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_BILLBOARD))),
 						XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ID)),
 						XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_NAME)),							
-						com.pairapp.dataobjects.ForumPrivacy.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PRIVACY))),provisioningGroup);
-				
+						com.pairapp.dataobjects.ForumPrivacy.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PRIVACY))));
 				forumSource.setIsProvisionEnabled(isProvisioningEnabled);
 				
+				boolean isValid = true;
+				String parserMessage = null;
 				for (PostFieldType fieldType : PostFieldType.values()) {
-					if ((fieldType.getPersistency() == Persistency.Source) &&
+					if (((fieldType.getPersistency() == Persistency.Source) || (fieldType.getPersistency() == Persistency.SourceAssociated)) &&
 							(mainHeader.containsKey(fieldType.name()))) {
-						if (XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name())).isEmpty() == false)
-							forumSource.setProperty(fieldType.name(), XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name())));
+						String propertyName = fieldType.name();
+						String propertyValue = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name()));
+						if (propertyValue.isEmpty() == false)
+						{
+							boolean isSet = forumSource.setProperty(propertyName, propertyValue);
+							if (isSet == false)
+							{
+								parserMessage = "Unable to set property " + propertyName + " to value " + propertyValue;
+								isValid = false;
+							}
+						}
 						//isSuccessful &= moveNodeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, fieldType, false);
 					}
 				}
 				StringBuilder message = new StringBuilder();
-				boolean isValid = SourcesDatalayer.validateSource(message, forumSource, false);
-				String parserMessage = isValid ? "OK" : message.toString();
-				if (Objects.equal(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE)), parserMessage) == false)
+				if (isValid == true)
+				{
+					isValid = SourcesDatalayer.validateSource(message, forumSource, false);
+					parserMessage = isValid ? "OK" : message.toString();
+				}
+				if (Objects.equals(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE)), parserMessage) == false)
 				{
 					XLSUtil.setCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE), parserMessage);
 					hasExcelChanged = true;
@@ -179,12 +176,12 @@ public class ForumSourceWriter {
 					retSources.add(forumSource);
 				}
 				else {
-					Logger.getGlobal().severe("Source " + forumSource + ":" + parserMessage);
+					Logger.getGlobal().severe("Source " + forumSource + ": " + parserMessage);
 				}
 			}
 			else
 			{
-				if (Objects.equal(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE)), "Disabled") == false)
+				if (Objects.equals(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE)), "Disabled") == false)
 				{
 					XLSUtil.setCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE), "Disabled");
 					hasExcelChanged = true;
@@ -200,240 +197,5 @@ public class ForumSourceWriter {
 		return retSources;
 		
 
-	}
-
-	/**
-	 * @param wb
-	 * @param mainSheet
-	 * @param mainHeader
-	 * @param mainRow
-	 * @return
-	 */
-	private static String extractProvisioningGroupFromWorkbook(Workbook wb, int mainSheet,
-			Map<String, Integer> mainHeader, int mainRow) {
-		String provisioningGroup = null;
-		if (mainHeader.get(COLUMN_PROVISIONING_GROUP) != null)
-			provisioningGroup = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PROVISIONING_GROUP));
-		if (provisioningGroup == null)
-		{
-			Category category = Category.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(PostFieldType.ForumCategory.name())));
-			Country country = Country.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(PostFieldType.ForumLocationCountry.name())));
-			if ((country != null) && (category != null))
-			{
-				String categoryString = category.name();
-				if ((category == Category.Electronics) || (category == Category.Phone)|| (category == Category.VideoGaming))
-					categoryString = "Gadgets";
-			
-				provisioningGroup = categoryString + country.name();
-			}
-			
-		}
-		return provisioningGroup;
-	}
-	
-	
-
-	@SuppressWarnings("unused")
-	private static boolean exportToXML(File inputFile) {
-		datastoreHelper.setUp();
-		Workbook wb = XLSUtil.openXLS(inputFile);
-		Logger.getGlobal().info("XLS file loaded.");
-		
-		int mainSheet = 0;
-
-		// Find the header row
-		Map<String, Integer> mainHeader = new HashMap<String, Integer>();
-		int mainHeaderRow = XLSUtil.getHeaderRow(wb, mainSheet, mainHeader, COLUMN_ID, COLUMN_BILLBOARD,
-				COLUMN_PRIVACY, COLUMN_NAME, COLUMN_ENABLED);
-		
-		
-		if (mainHeaderRow == -1) {
-			Logger.getGlobal().severe("Unable to locate main row in xls.");
-			return false;
-		}
-		
-		if (mainHeader.get(COLUMN_PARSER_MESSAGE) == null)
-		{
-			XLSUtil.addColumnToHeader(mainHeader, COLUMN_PARSER_MESSAGE);
-			XLSUtil.updateHeader(wb, mainSheet, mainHeaderRow, mainHeader);
-		}
-		
-		boolean isSuccessful = true;
-		// Scan the list of xml levels
-		int mainRow = mainHeaderRow + 1;
-		boolean hasExcelChanged = false;
-		try {
-			DocumentBuilderFactory docFactory = DocumentBuilderFactory.newInstance();
-			DocumentBuilder docBuilder = docFactory.newDocumentBuilder();
-			
-			//Check for redundent coluymns
-			ArrayList<String> redundentColumns = new ArrayList<String>(mainHeader.keySet());
-			redundentColumns.remove(COLUMN_ORDER);
-			redundentColumns.remove(COLUMN_REMARKS);
-			redundentColumns.remove(COLUMN_ADDED_ON);
-			redundentColumns.remove(COLUMN_ID);
-			redundentColumns.remove(COLUMN_BILLBOARD);
-			redundentColumns.remove(COLUMN_PRIVACY);
-			redundentColumns.remove(COLUMN_NAME);
-			redundentColumns.remove(COLUMN_LINK);
-			redundentColumns.remove(COLUMN_OWNER);
-			redundentColumns.remove(COLUMN_DESCRIPTION);
-			redundentColumns.remove(COLUMN_ENABLED);
-			for (PostFieldType fieldType : PostFieldType.values())
-				if ((fieldType.getPersistency() == Persistency.Source) || (fieldType.getPersistency() == Persistency.SourceAssociated))
-						redundentColumns.remove(fieldType.name());
-			if (redundentColumns.isEmpty() == false)
-			{
-				Logger.getGlobal().warning("The XLS data contains the following unknown rows " + Arrays.toString(redundentColumns.toArray(new String[redundentColumns.size()])) + ".");
-			}
-			
-			// Write the XML to a file
-			// root elements
-			Document doc = docBuilder.newDocument();
-			Element rootElement = doc.createElement("Sources");
-			doc.appendChild(rootElement);
-
-			while (!XLSUtil.isEndRow(wb, mainSheet, mainRow)) {
-
-				String enabled = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ENABLED));
-				if (Boolean.valueOf(enabled) == true)
-				{
-					Element srcElement = doc.createElement("Source");
-					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_ID, true);
-					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_BILLBOARD, true);
-					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_PRIVACY, true);
-					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_NAME, true);
-					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_LINK, false);
-					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_OWNER, false);
-					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_DESCRIPTION, false);
-					isSuccessful &= moveAttributeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, COLUMN_ENABLED, false);
-					
-					String provisioningGroup = extractProvisioningGroupFromWorkbook(wb, mainSheet, mainHeader, mainRow);
-					ForumSource forumSource = new ForumSource(Billboard.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_BILLBOARD))),
-							XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ID)),
-							XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_NAME)),							
-							com.pairapp.dataobjects.ForumPrivacy.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PRIVACY))), provisioningGroup);
-					//ForumSource forumSource = new ForumSource(
-					//		XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_ID)),
-					//		XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_NAME)),	
-					//		Billboard.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_BILLBOARD))),"","",
-					//		com.pairapp.dataobjects.ForumSource.ForumPrivacy.toEnum(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PRIVACY))));
-					
-					for (PostFieldType fieldType : PostFieldType.values()) {
-						if ((fieldType.getPersistency() == Persistency.Source) &&
-								(mainHeader.containsKey(fieldType.name()))) {
-							if (XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name())).isEmpty() == false)
-								forumSource.setProperty(fieldType.name(), XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name())));
-							isSuccessful &= moveNodeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, fieldType, false);
-						}
-					}
-					StringBuilder message = new StringBuilder();
-					boolean isValid = SourcesDatalayer.validateSource(message, forumSource, false);
-					String parserMessage = isValid ? "OK" : message.toString();
-					if (Objects.equal(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE)), parserMessage) == false)
-					{
-						XLSUtil.setCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE), parserMessage);
-						hasExcelChanged = true;
-					}
-					
-					//Add the information of the source to the xml
-					if (isValid)
-					{
-						rootElement.appendChild(srcElement);
-					}
-				}
-				else
-				{
-					if (Objects.equal(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE)), "Disabled") == false)
-					{
-						XLSUtil.setCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE), "Disabled");
-						hasExcelChanged = true;
-					}
-				}
-				++mainRow;
-				
-			}
-
-			if (hasExcelChanged)
-				XLSUtil.saveXLS(wb, inputFile);
-			
-			if (isSuccessful == true && doWriteXmlFile) {
-
-				Logger.getGlobal().info("Beginning to write XML file.");
-				
-				File xmlFilename = new File("ReferenceData\\ForumSources.xml");
-
-				// write the content into xml file
-				TransformerFactory transformerFactory = TransformerFactory.newInstance();
-				Transformer transformer = transformerFactory.newTransformer();
-				DOMSource source = new DOMSource(doc);
-				StreamResult result = new StreamResult(new PrintStream(xmlFilename));
-				transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-				transformer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
-				transformer.transform(source, result);
-
-				Logger.getGlobal().info("XML file written.");
-				
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-			isSuccessful = false;
-		}
-		datastoreHelper.tearDown();
-		return isSuccessful;
-		
-
-	}
-
-	private static boolean moveAttributeToXml(Element srcElement, Workbook wb, int mainSheet, int mainRow,
-			Map<String, Integer> mainHeader, String columnName, boolean isRequired) {
-		String value = mainHeader.containsKey(columnName) ? XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(columnName)) : "";
-		value = value.trim();
-		if (!value.isEmpty()) {
-			StringBuilder attribName = new StringBuilder(columnName);
-			attribName.setCharAt(0, Character.toLowerCase(attribName.charAt(0)));
-			srcElement.setAttribute(attribName.toString(), value);
-		} else if (isRequired == true) // && (value.isEmpty())
-		{
-			Logger.getGlobal().severe(
-					"Unable to find attribute " + columnName + " for row " + (mainRow + 1) + ". Writing failed.");
-			return false;
-		}
-		return true;
-	}
-
-	private static boolean moveNodeToXml(Element srcElement, Workbook wb, int mainSheet, int mainRow,
-			Map<String, Integer> mainHeader, PostFieldType property, boolean isRequired) {
-		String value = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(property.name()));
-		value = value.trim();
-		if (!value.isEmpty()) {
-			if (!isValidPropertyValue(property, value))
-			{
-				Logger.getGlobal().severe(
-						"Unable to set property " + property.name() + " with a value of " + value + " for row " + (mainRow + 1) + ". Writing failed.");
-				return false;
-			}
-			else
-			{
-				Element node = srcElement.getOwnerDocument().createElement(property.name());
-				srcElement.appendChild(node);
-				node.setAttribute("value", value);
-				return true;
-			}
-		} else if (isRequired == true) // && (value.isEmpty())
-		{
-			Logger.getGlobal().severe(
-					"Unable to find property " + property.name() + " for row " + (mainRow + 1) + ". Writing failed.");
-			return false;
-		}
-		return true;
-	}
-
-	private static boolean isValidPropertyValue(PostFieldType property, String value) {
-		if (property.getValueType().getEnumClass() != null)
-		{
-			return VariantEnum.generateInstance(property.getValueType(), value) != null;
-		}
-		return true;
 	}
 }

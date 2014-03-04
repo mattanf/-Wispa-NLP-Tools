@@ -80,8 +80,9 @@ public class XLSUtil {
 					return Double.toString(val);
 
 			case Cell.CELL_TYPE_STRING:
-				String str = cell.getStringCellValue().trim();
-				str = str.replaceAll("[\\u00a0]", " ");
+				String str = cell.getStringCellValue();
+				str = str.replaceAll("[\\u200E]",""); //remove left-to-right marker 
+				str = str.replaceAll("[\\u00a0]", " ").trim(); //replace hebrew space with regular space
 				return str;
 			case Cell.CELL_TYPE_BOOLEAN:
 				return Boolean.toString(cell.getBooleanCellValue());

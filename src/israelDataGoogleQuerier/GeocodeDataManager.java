@@ -423,7 +423,6 @@ public class GeocodeDataManager {
 			try {
 				Thread.sleep((long) sleepTimeBetweenQueries);
 			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		}

@@ -8,7 +8,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
-import com.google.appengine.labs.repackaged.com.google.common.base.Objects;
+import java.util.Objects;
 import com.google.code.geocoder.model.GeocoderAddressComponent;
 import com.google.code.geocoder.model.GeocoderResult;
 import com.google.code.geocoder.model.LatLng;
@@ -98,7 +98,7 @@ public class MldDictionaryWriter {
 		if (args.length == 0)
 		{
 			processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\placesUS.xlsx"));
-			//processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationGB.xlsx"));
+			processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationGB.xlsx"));
 			//processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationUS.xlsx"));
 			//processFile(new File("E:\\MyProjects\\WispaResources\\Server\\Parser\\Location Data\\LocationUS-NY.xlsx"));
 			
@@ -685,7 +685,7 @@ public class MldDictionaryWriter {
 							
 							String value = XLSUtil.getCellString(wb, mainSheet, row, mainHeader.get(froms.get(i)));
 							if (value.isEmpty() && hadPreviousValues == false) value = null;
-							if (Objects.equal(value, prevValues.get(i)) == false)
+							if (Objects.equals(value, prevValues.get(i)) == false)
 							{
 								hadPreviousValues = true;
 								prevValues.set(i, value);

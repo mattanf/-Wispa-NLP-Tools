@@ -93,6 +93,10 @@ public class DataRunner {
 		public long getRemainingMillis() {
 			return 111110;
 		}
+		//@Override
+		public String getModuleId() {
+			return null;
+		}
 		}
 	
 	final static int STYLE_CENTER = 1 << 0;
@@ -802,7 +806,6 @@ public class DataRunner {
 				try {
 					connectToLocalServer = connectToLocalServer();
 				} catch (IOException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			parser.init(connectToLocalServer);

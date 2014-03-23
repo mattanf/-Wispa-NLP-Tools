@@ -12,7 +12,6 @@ import java.util.Objects;
 import com.google.code.geocoder.model.GeocoderAddressComponent;
 import com.google.code.geocoder.model.GeocoderResult;
 import com.google.code.geocoder.model.LatLng;
-import com.google.gwt.dev.util.collect.HashSet;
 import com.pairapp.engine.parser.data.VariantTypeEnums.CountryState;
 
 import utility.AddressComponent;
@@ -24,6 +23,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;

@@ -8,8 +8,6 @@ import com.pairapp.dataobjects.ForumSource;
 import com.pairapp.engine.parser.data.PostFieldType;
 import com.pairapp.engine.parser.data.PostFieldType.Persistency;
 import com.pairapp.engine.parser.data.VariantTypeEnums.Billboard;
-import com.pairapp.engine.parser.data.VariantTypeEnums.Category;
-import com.pairapp.engine.parser.data.VariantTypeEnums.Country;
 import com.pairapp.utilities.LogLineFormatter;
 
 import utility.XLSUtil;

@@ -12,6 +12,7 @@ import com.google.code.geocoder.model.GeocodeResponse;
 import com.google.code.geocoder.model.GeocoderRequest;
 import com.google.code.geocoder.model.GeocoderResult;
 import com.google.code.geocoder.model.GeocoderStatus;
+import com.google.code.geocoder.model.LatLng;
 
 public class GoogleGeocodeQuerier {
 	
@@ -162,6 +163,7 @@ public class GoogleGeocodeQuerier {
 	 * @return results
 	 */
 	private GeocodeResponse doGeocodeQuery(String locationName) {
+			
 		sleepTimeBetweenQueries = Math.max(sleepTimeBetweenQueries - 0.01, 10);
 		if (sleepTimeBetweenQueries > 0) {
 			try {
@@ -170,8 +172,15 @@ public class GoogleGeocodeQuerier {
 				e.printStackTrace();
 			}
 		}
+		//GeocoderRequest geocoderRequest = new GeocoderRequestBuilder().setAddress(locationName).getGeocoderRequest();
 		System.out.print("Querying location: " + locationName + " ... ");
-		GeocoderRequest geocoderRequest = new GeocoderRequestBuilder().setAddress(locationName).getGeocoderRequest();
+		GeocoderRequest geocoderRequest = null;
+		if (locationName.matches("[+\\-]?\\d+(\\.\\d*)? ?/ ?[+\\-]?\\d+(\\.\\d*)"))
+		{
+			String[] lngLatSplit = locationName.split("/");
+			geocoderRequest = new GeocoderRequestBuilder().setLocation(new LatLng(lngLatSplit[0].trim(), lngLatSplit[1].trim())).getGeocoderRequest();
+		}
+		else geocoderRequest = new GeocoderRequestBuilder().setAddress(locationName).getGeocoderRequest();
 		geocoderRequest.setLanguage("en");
 		GeocodeResponse geocoderResponse = geocoder.geocode(geocoderRequest);
 		

@@ -32,6 +32,9 @@ public class AddressComponent {
 	public static final AddressComponent acSynagogue = new AddressComponent("synagogue", "");
 	public static final AddressComponent acChurch = new AddressComponent("church","");
 	public static final AddressComponent acEstablishment = new AddressComponent("establishment", "");
+	public static final AddressComponent acSubwayStation = new AddressComponent("subway_station", "");
+	public static final AddressComponent acTrainStation = new AddressComponent("train_station", "");
+	public static final AddressComponent acTransitStation = new AddressComponent("transit_station", "");
 	
 	private String name;
 	private String description;

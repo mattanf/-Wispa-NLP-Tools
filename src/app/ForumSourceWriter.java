@@ -144,6 +144,7 @@ public class ForumSourceWriter {
 							(mainHeader.containsKey(fieldType.name()))) {
 						String propertyName = fieldType.name();
 						String propertyValue = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name()));
+						propertyValue = hackPropertyValueToSingleValue(propertyValue,propertyName);
 						if (propertyValue.isEmpty() == false)
 						{
 							boolean isSet = forumSource.setProperty(propertyName, propertyValue);
@@ -195,5 +196,17 @@ public class ForumSourceWriter {
 		return retSources;
 		
 
+	}
+
+	private static String hackPropertyValueToSingleValue(String propertyValue, String propertyName) {
+		if ((PostFieldType.ForumLocationState.name().equals(propertyName)) ||
+				(PostFieldType.ForumLocationRegion.name().equals(propertyName)) ||
+				(PostFieldType.ForumLocationSubRegion.name().equals(propertyName)) ||
+				(PostFieldType.ForumLocationCity.name().equals(propertyName))) {
+			int delim = propertyValue.indexOf(';');
+			if (delim != -1)
+				return propertyValue.substring(0, delim);
+		}
+		return propertyValue;
 	}
 }

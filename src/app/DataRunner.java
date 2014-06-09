@@ -763,7 +763,7 @@ public class DataRunner {
 			}
 			else 
 			{
-				PostData outData = parser.parseMessage(inputData);
+				PostData outData = parser.parseMessage(inputData, true);
 				threadInputQueue.add(new ParseThreadData(readRowNum,inputData, outData));
 			}
 		}
@@ -812,7 +812,7 @@ public class DataRunner {
 			threadMessageParser.set(parser);
 		}
 		ParseThreadData poll = threadInputQueue.poll();
-		PostData outData = parser.parseMessage(poll.getInput());
+		PostData outData = parser.parseMessage(poll.getInput(), true);
 		try {
 			threadOutputQueue.put(new ParseThreadData(poll.getRow(), poll.getInput(), outData));
 		} catch (InterruptedException e) {

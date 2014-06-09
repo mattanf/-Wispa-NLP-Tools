@@ -1,27 +1,32 @@
 package app;
 import java.io.File;
-import org.apache.poi.ss.usermodel.Workbook;
-
-import java.util.Objects;
-import com.pairapp.datalayer.SourcesDatalayer;
-import com.pairapp.dataobjects.ForumSource;
-import com.pairapp.engine.parser.data.PostFieldType;
-import com.pairapp.engine.parser.data.PostFieldType.Persistency;
-import com.pairapp.engine.parser.data.VariantTypeEnums.Billboard;
-import com.pairapp.utilities.LogLineFormatter;
-
-import utility.XLSUtil;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import org.apache.poi.ss.usermodel.Workbook;
+
+import utility.XLSUtil;
+
+import com.google.appengine.api.xmpp.MessageBuilder;
 import com.google.appengine.tools.development.testing.LocalDatastoreServiceTestConfig;
 import com.google.appengine.tools.development.testing.LocalServiceTestHelper;
+import com.pairapp.datalayer.SourcesDatalayer;
+import com.pairapp.dataobjects.ForumSource;
+import com.pairapp.engine.parser.data.PostFieldType;
+import com.pairapp.engine.parser.data.PostFieldType.Persistency;
+import com.pairapp.engine.parser.data.PostFields;
+import com.pairapp.engine.parser.data.VariantTypeEnums.Billboard;
+import com.pairapp.engine.parser.data.VariantTypeEnums.CountryState;
+import com.pairapp.utilities.LogLineFormatter;
+import com.pairapp.utilities.StringUtilities;
+import com.pairapp.utilities.Utils;
 public class ForumSourceWriter {
 
 	final static String COLUMN_ORDER = "Order";
@@ -138,34 +143,57 @@ public class ForumSourceWriter {
 				forumSource.setIsProvisionEnabled(isProvisioningEnabled);
 				
 				boolean isValid = true;
-				String parserMessage = null;
+				StringBuilder message = new StringBuilder();
 				for (PostFieldType fieldType : PostFieldType.values()) {
 					if (((fieldType.getPersistency() == Persistency.Source) || (fieldType.getPersistency() == Persistency.SourceAssociated)) &&
 							(mainHeader.containsKey(fieldType.name()))) {
 						String propertyName = fieldType.name();
 						String propertyValue = XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(fieldType.name()));
-						propertyValue = hackPropertyValueToSingleValue(propertyValue,propertyName);
-						if (propertyValue.isEmpty() == false)
+						propertyValue = handleMultiStateProperty(forumSource,propertyValue,propertyName,message);
+						//Handle error
+						if (propertyValue == null)
+						{
+							isValid = false;
+						}
+						else if (propertyValue.isEmpty() == false)
 						{
 							boolean isSet = forumSource.setProperty(propertyName, propertyValue);
 							if (isSet == false)
 							{
-								parserMessage = "Unable to set property " + propertyName + " to value " + propertyValue;
+								if (message.length() != 0) message.append("\n");
+								message.append("Unable to set property " + propertyName + " to value " + propertyValue);
 								isValid = false;
 							}
 						}
-						//isSuccessful &= moveNodeToXml(srcElement, wb, mainSheet, mainRow, mainHeader, fieldType, false);
 					}
 				}
-				StringBuilder message = new StringBuilder();
+				
+				if (isValid == true)
+				{
+					PostFields newFields = SourcesDatalayer.extrapolateMissingSourceFields(forumSource, message, false);
+					if (newFields != null)
+					{
+						forumSource.setProperties(newFields);
+					}
+					else {
+						isValid = false;
+					}
+				}
+				
 				if (isValid == true)
 				{
 					isValid = SourcesDatalayer.validateSource(message, forumSource, false);
-					parserMessage = isValid ? "OK" : message.toString();
 				}
-				if (Objects.equals(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE)), parserMessage) == false)
+				
+				String excelMessage = message.toString();
+				if (isValid == true)
+					excelMessage = "OK";
+				else if (message.length() == 0)
+					excelMessage = "Unknown Error";
+					
+				if (Objects.equals(XLSUtil.getCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE)), excelMessage) == false)
 				{
-					XLSUtil.setCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE), parserMessage);
+					XLSUtil.setCellString(wb, mainSheet, mainRow, mainHeader.get(COLUMN_PARSER_MESSAGE), excelMessage);
 					hasExcelChanged = true;
 				}
 				
@@ -175,7 +203,7 @@ public class ForumSourceWriter {
 					retSources.add(forumSource);
 				}
 				else {
-					Logger.getGlobal().severe("Source " + forumSource + ": " + parserMessage);
+					Logger.getGlobal().severe("Source " + forumSource + ": " + excelMessage);
 				}
 			}
 			else
@@ -198,15 +226,32 @@ public class ForumSourceWriter {
 
 	}
 
-	private static String hackPropertyValueToSingleValue(String propertyValue, String propertyName) {
-		if ((PostFieldType.ForumLocationState.name().equals(propertyName)) ||
-				(PostFieldType.ForumLocationRegion.name().equals(propertyName)) ||
-				(PostFieldType.ForumLocationSubRegion.name().equals(propertyName)) ||
-				(PostFieldType.ForumLocationCity.name().equals(propertyName))) {
-			int delim = propertyValue.indexOf(';');
-			if (delim != -1)
-				return propertyValue.substring(0, delim);
+	private static String handleMultiStateProperty(ForumSource source, String propertyValue, String propertyName, StringBuilder message) {
+		String retValue = propertyValue;
+		if (PostFieldType.ForumLocationState.name().equals(propertyName)) {
+			String splittedProperties[] = propertyValue.split("\\s*;\\s*");
+			if (splittedProperties.length > 1)
+			{
+				//If we do not know which state it is return no state
+				retValue = "";
+				//We have multiple values for states
+				String finalPropString = "";
+				for(String indProp : splittedProperties)
+				{
+					CountryState countryState = CountryState.freeTextToEnum(indProp);
+					//hack to report error
+					if (countryState == null)
+					{
+						if (message.length() != 0) message.append("\n");
+						message.append("Unknown country " + indProp + " in ForumLocationState");
+						retValue = null;
+					}
+					else finalPropString = StringUtilities.concate(finalPropString,  ";", countryState.name());
+				}
+				if (finalPropString.isEmpty() == false)
+					source.setProperty(PostFieldType.ANACountryStates.name(), finalPropString);
+			}
 		}
-		return propertyValue;
+		return retValue;
 	}
 }

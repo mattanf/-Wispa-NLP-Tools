@@ -69,8 +69,8 @@ public class ForumSourceWriter {
 			//datastoreHelper.setUp();
 			doWriteXmlFile = Arrays.asList(args).contains("-w");
 			boolean isSuccessful = processFile(inputFile);
-			datastoreHelper.tearDown();
-			Logger.getGlobal().info("Work " + (isSuccessful ? "finished successfully." : "failed."));
+			Logger.getGlobal().info("Work " + (isSuccessful ? "finished successfully." : "failed."));	
+			//datastoreHelper.tearDown();
 		}
 
 	}
